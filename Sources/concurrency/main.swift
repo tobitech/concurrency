@@ -35,6 +35,10 @@ func threadPriorityAndCancellation() {
     // this doesn't perticipate in cooperative cancellation, so it will wait it full time even though it's cancelled.
     Thread.sleep(forTimeInterval: 1)
     
+    Thread.detachNewThread {
+      print("Inner thread cancelled?", Thread.current.isCancelled)
+    }
+    
     // this is how co-operative cancellation works.
     
     guard !Thread.current.isCancelled else {
@@ -61,54 +65,55 @@ func threadPriorityAndCancellation() {
   thread.cancel()
 }
 
-func makeDatabaseQuery() {
-  let requestId = Thread.current.threadDictionary["requestId"] as! UUID
-  print(requestId, "Making database query")
-  Thread.sleep(forTimeInterval: 0.5) // to simulate database operation.
-  print(requestId, "Finished database query")
-}
-
-func makeNetworkRequest() {
-  let requestId = Thread.current.threadDictionary["requestId"] as! UUID
-  print(requestId, "Making network request")
-  Thread.sleep(forTimeInterval: 0.5) // to simulate network operation.
-  print(requestId, "Finished network request")
-}
-
-// in an oversimplified world, let's think of a server as a function from request to response.
-func response(for request: URLRequest) -> HTTPURLResponse {
-  // TODO: do the real work
-  
-  // this can be accessed from anywhere
-  let requestId = Thread.current.threadDictionary["requestId"] as! UUID
-  
-  // to find out how long did the entire request take.
-  let start = Date()
-  defer { print(request, "Finished in", Date().timeIntervalSince(start)) }
-  
-  // we didn't have to pass in the `requestId` into this function,
-  // we can just pluck it out of thin here inside the functions.
-  // with database query now running in another thread we no longer have access to the requestId on the threadDictionary and so it crashes.
-  let databaseQueryThread = Thread { makeDatabaseQuery() }
-  // whenever we spin off a new thread, we need to explicitly copy over the current threadDictionary
-  // the reason we're having to do this is because Threads don't have the concept of a child Threads i.e. creating a new thread leads to a whole new isolated thread without inheriting anything from the thread from which is was created. that includes, priority, threadDictionary and more.
-  databaseQueryThread.threadDictionary.addEntries(from: Thread.current.threadDictionary as! [AnyHashable : Any])
-  databaseQueryThread.start()
-  let networkRequestThread = Thread { makeNetworkRequest() }
-  networkRequestThread.threadDictionary.addEntries(from: Thread.current.threadDictionary as! [AnyHashable : Any])
-  networkRequestThread.start()
-  
-  // TODO: join threads somehow
-  // we want to wait for the two new threads to finishe so that we can join the results together. Thread class doesn't provide a way to do this. so we can improvise to achieve that.
-  // this is a narly logic and a huge bummer.
-  while !databaseQueryThread.isFinished || !networkRequestThread.isFinished {
-    Thread.sleep(forTimeInterval: 0.1) // add more sleep to wait for the two threads
+func threadStorageAndCoordination() {
+  func makeDatabaseQuery() {
+    let requestId = Thread.current.threadDictionary["requestId"] as! UUID
+    print(requestId, "Making database query")
+    Thread.sleep(forTimeInterval: 0.5) // to simulate database operation.
+    print(requestId, "Finished database query")
   }
   
-  return HTTPURLResponse()
-}
-
-//for _ in 0..<10 {
+  func makeNetworkRequest() {
+    let requestId = Thread.current.threadDictionary["requestId"] as! UUID
+    print(requestId, "Making network request")
+    Thread.sleep(forTimeInterval: 0.5) // to simulate network operation.
+    print(requestId, "Finished network request")
+  }
+  
+  // in an oversimplified world, let's think of a server as a function from request to response.
+  func response(for request: URLRequest) -> HTTPURLResponse {
+    // TODO: do the real work
+    
+    // this can be accessed from anywhere
+    let requestId = Thread.current.threadDictionary["requestId"] as! UUID
+    
+    // to find out how long did the entire request take.
+    let start = Date()
+    defer { print(request, "Finished in", Date().timeIntervalSince(start)) }
+    
+    // we didn't have to pass in the `requestId` into this function,
+    // we can just pluck it out of thin here inside the functions.
+    // with database query now running in another thread we no longer have access to the requestId on the threadDictionary and so it crashes.
+    let databaseQueryThread = Thread { makeDatabaseQuery() }
+    // whenever we spin off a new thread, we need to explicitly copy over the current threadDictionary
+    // the reason we're having to do this is because Threads don't have the concept of a child Threads i.e. creating a new thread leads to a whole new isolated thread without inheriting anything from the thread from which is was created. that includes, priority, threadDictionary and more.
+    databaseQueryThread.threadDictionary.addEntries(from: Thread.current.threadDictionary as! [AnyHashable : Any])
+    databaseQueryThread.start()
+    let networkRequestThread = Thread { makeNetworkRequest() }
+    networkRequestThread.threadDictionary.addEntries(from: Thread.current.threadDictionary as! [AnyHashable : Any])
+    networkRequestThread.start()
+    
+    // TODO: join threads somehow
+    // we want to wait for the two new threads to finishe so that we can join the results together. Thread class doesn't provide a way to do this. so we can improvise to achieve that.
+    // this is a narly logic and a huge bummer.
+    while !databaseQueryThread.isFinished || !networkRequestThread.isFinished {
+      Thread.sleep(forTimeInterval: 0.1) // add more sleep to wait for the two threads
+    }
+    
+    return HTTPURLResponse()
+  }
+  
+  //for _ in 0..<10 {
   let thread = Thread {
     response(for: URLRequest(url: URL(string: "http://pointfree.co")!))
   }
@@ -116,6 +121,9 @@ func response(for request: URLRequest) -> HTTPURLResponse {
   // when you set a value in this threadDictionary, it is available from any executed code running on that thread.
   thread.threadDictionary["requestId"] = UUID()
   thread.start()
-//}
+  //}
+}
+
+threadPriorityAndCancellation()
 
 Thread.sleep(forTimeInterval: 1.1)
