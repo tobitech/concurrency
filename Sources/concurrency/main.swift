@@ -88,13 +88,27 @@ func response(for request: URLRequest) -> HTTPURLResponse {
   
   // we didn't have to pass in the `requestId` into this function,
   // we can just pluck it out of thin here inside the functions.
-  makeDatabaseQuery()
-  makeNetworkRequest()
+  // with database query now running in another thread we no longer have access to the requestId on the threadDictionary and so it crashes.
+  let databaseQueryThread = Thread { makeDatabaseQuery() }
+  // whenever we spin off a new thread, we need to explicitly copy over the current threadDictionary
+  // the reason we're having to do this is because Threads don't have the concept of a child Threads i.e. creating a new thread leads to a whole new isolated thread without inheriting anything from the thread from which is was created. that includes, priority, threadDictionary and more.
+  databaseQueryThread.threadDictionary.addEntries(from: Thread.current.threadDictionary as! [AnyHashable : Any])
+  databaseQueryThread.start()
+  let networkRequestThread = Thread { makeNetworkRequest() }
+  networkRequestThread.threadDictionary.addEntries(from: Thread.current.threadDictionary as! [AnyHashable : Any])
+  networkRequestThread.start()
+  
+  // TODO: join threads somehow
+  // we want to wait for the two new threads to finishe so that we can join the results together. Thread class doesn't provide a way to do this. so we can improvise to achieve that.
+  // this is a narly logic and a huge bummer.
+  while !databaseQueryThread.isFinished || !networkRequestThread.isFinished {
+    Thread.sleep(forTimeInterval: 0.1) // add more sleep to wait for the two threads
+  }
   
   return HTTPURLResponse()
 }
 
-for _ in 0..<10 {
+//for _ in 0..<10 {
   let thread = Thread {
     response(for: URLRequest(url: URL(string: "http://pointfree.co")!))
   }
@@ -102,6 +116,6 @@ for _ in 0..<10 {
   // when you set a value in this threadDictionary, it is available from any executed code running on that thread.
   thread.threadDictionary["requestId"] = UUID()
   thread.start()
-}
+//}
 
 Thread.sleep(forTimeInterval: 1.1)
