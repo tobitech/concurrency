@@ -124,6 +124,15 @@ func threadStorageAndCoordination() {
   //}
 }
 
-threadPriorityAndCancellation()
+let workcount = 1_000
 
-Thread.sleep(forTimeInterval: 1.1)
+for n in 0..<workcount {
+  let thread = Thread.detachNewThread {
+    print(n, Thread.current)
+    // simulate serious work of downloading a web page and decoding, parsing and indexing by throwing in an infinite loop.
+    while true {}
+    
+  }
+}
+
+Thread.sleep(forTimeInterval: 3)
