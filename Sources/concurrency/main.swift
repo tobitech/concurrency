@@ -126,10 +126,13 @@ func response(for request: URLRequest, queue: DispatchQueue) -> HTTPURLResponse 
   return .init()
 }
 
+// we can create a single queue, when the server first loads up.
+let serverQueue = DispatchQueue(label: "server-queue", attributes: .concurrent)
+
 let requestIdKey = DispatchSpecificKey<UUID>()
 let requestId = UUID()
 // remember to set concurrent attribute to make it the work sent to it happen in parallel
-let requestQueue = DispatchQueue(label: "request-\(requestId)", attributes: .concurrent)
+let requestQueue = DispatchQueue(label: "request-\(requestId)", attributes: .concurrent, target: serverQueue)
 
 // This allows us to pluck the request ID out of thin air without having to explicitly pass it through every single layer:
 // as long as we are operating within the execution context of this `queue`, we will have access to it.
