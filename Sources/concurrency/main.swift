@@ -27,6 +27,11 @@ let operation = BlockOperation()
 // this is how to do cooperative cancellation.
 operation.addExecutionBlock { [unowned operation] in
   
+  // running this to demonstrate that program ran for 1.0sec even though we cancelled it after 0.1sec
+  let start = Date()
+  defer { print("Finished", Date().timeIntervalSince(start)) }
+  
+  // It’s worth pointing that although cancellation is cooperative, the cooperation is not deeply ingrained in the system. Here we cancelled the task after 0.1 seconds, but the thread is still going to sleep for the full 1 second before continuing. There is no way to interrupt that sleeping:
   Thread.sleep(forTimeInterval: 1)
   guard !operation.isCancelled else {
     print("Cancelled!")
