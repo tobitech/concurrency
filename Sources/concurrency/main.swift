@@ -3,8 +3,8 @@ import Foundation
 // for GCD, you think of concurrency in terms of queueus rather than in terms of threads.
 
 // to start you start by creating a dispath queue.
-
-let queue = DispatchQueue(label: "my.queue")
+// adding .concurrent attribute, make it run the added work concurrently an on different threads.
+let queue = DispatchQueue(label: "my.queue", attributes: .concurrent)
 
 // then you can send units of work to the queue to be performed.
 // this allows us to queue up some asynchronous work.
