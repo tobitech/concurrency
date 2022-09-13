@@ -49,11 +49,28 @@ func dispatchBasics() {
 let queue = DispatchQueue(label: "my.queue", qos: .background)
 
 // you can also get a hold of the unit of work performed just like operation queues by building up a `DispatchWorkItem`.
-let item = DispatchWorkItem {
+var item: DispatchWorkItem!
+// we can't use a capture list in the closure for this one, because the capture list eagerly captures it and because we haven't instantiated it with a value (implicitly unwrapped optional), what is captured is a nil value.
+
+item = DispatchWorkItem {
+  // this helps with the cyclical dependency that has been introduced.
+  // this should release that item from any kind of retain cycle.
+  defer { item = nil }
+  Thread.sleep(forTimeInterval: 1)
+  guard !item.isCancelled else {
+    print("Cancelled!")
+    return
+  }
   print(Thread.current)
 }
 
 queue.async(execute: item)
+
+Thread.sleep(forTimeInterval: 0.5)
+
+// cancel a work item.
+// cancellation is also cooperative, it's up to us to be good citizens by regularly checking if the work item has been cancelled so that we can short-circuit the remaining work that needs to be done.
+item.cancel()
 
 
 Thread.sleep(forTimeInterval: 2)
