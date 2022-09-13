@@ -56,6 +56,10 @@ item = DispatchWorkItem {
   // this helps with the cyclical dependency that has been introduced.
   // this should release that item from any kind of retain cycle.
   defer { item = nil }
+  
+  let start = Date()
+  defer { print("Finished in", Date().timeIntervalSince(start)) }
+  
   Thread.sleep(forTimeInterval: 1)
   guard !item.isCancelled else {
     print("Cancelled!")
