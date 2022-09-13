@@ -100,11 +100,19 @@ let queue = OperationQueue()
 for n in 0..<workcount {
   queue.addOperation {
     // we're going to hold on for the thread created here just so that we can wait for time to pass.
-    Thread.sleep(forTimeInterval: 1)
+    // Thread.sleep(forTimeInterval: 1)
     // we got not more than 70 threads spun up, meaning about 70 threads to run 1,000 operations.
     // this is a good thing, because operation queus are working like the thread pool concept we discussed in the last episode.
     print(n, Thread.current)
+    while true {}
   }
+}
+
+// this wasn't printed, because operation queue didn't allow for 1,000 threads to be created and because the time we slept for wasn't enough for the work to be done.
+// so it just blocks the queue and prevents other operations in the queue from runnning.
+queue.addOperation {
+  print("Starting the prime operation")
+  nthPrime(50_000)
 }
 
 Thread.sleep(forTimeInterval: 2)
