@@ -167,16 +167,46 @@ func dispatchStorageAndCoordination() {
   }
 }
 
-// in this case we create a single queue and new work item for each task.
-// this makes the number of threads created minimal compared to when we created a new queue for each unit of work.
-// So, even if we are being responsible by using a single queue, we still can do CPU intensive work on that queue and completely block others from doing work on the same queue.
-let queue = DispatchQueue(label: "concurrent-queue", attributes: .concurrent)
-for n in 0..<workcount {
-  // we're creating a queue to run a single unit of work.
-  queue.async {
-    print(Thread.current)
-    while true {}
+func dispatchPerformance() {
+  // in this case we create a single queue and new work item for each task.
+  // this makes the number of threads created minimal compared to when we created a new queue for each unit of work.
+  // So, even if we are being responsible by using a single queue, we still can do CPU intensive work on that queue and completely block others from doing work on the same queue.
+  let queue = DispatchQueue(label: "concurrent-queue", attributes: .concurrent)
+  for n in 0..<workcount {
+    // we're creating a queue to run a single unit of work.
+    queue.async {
+      print(Thread.current)
+      while true {}
+    }
   }
 }
+
+class Counter {
+  let queue = DispatchQueue(label: "counter", attributes: .concurrent)
+  var count = 0
+  func increment() {
+    // by setting this barrier flag, we're basically preventing any work from entrying until this work is completed.
+    self.queue.sync(flags: .barrier) {
+      count += 1
+    }
+  }
+}
+
+let counter = Counter()
+
+let queue = DispatchQueue(label: "concurrent-queue", attributes: .concurrent)
+
+for _ in 0..<workcount {
+  queue.async {
+    counter.increment()
+  }
+}
+
+Thread.sleep(forTimeInterval: 1)
+// shows that there is still a race condition
+// we can still use the lock we used previously to solve this
+// but GCD comes with a similar tool that can be used.
+// when we use a barrier, we get 1000 consistently.
+print("counter.count", counter.count) // 984
 
 Thread.sleep(forTimeInterval: 2)
