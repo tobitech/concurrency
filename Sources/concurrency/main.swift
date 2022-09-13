@@ -167,11 +167,13 @@ func dispatchStorageAndCoordination() {
   }
 }
 
-// this creates about 500 threads, not a thousand so definitely DispatchQueue is doing some work in the background to limit the number of threads but the number is till pretty high.
-// so thread explotion is still possible.
+// in this case we create a single queue and new work item for each task.
+// this makes the number of threads created minimal compared to when we created a new queue for each unit of work.
+// So, even if we are being responsible by using a single queue, we still can do CPU intensive work on that queue and completely block others from doing work on the same queue.
+let queue = DispatchQueue(label: "concurrent-queue", attributes: .concurrent)
 for n in 0..<workcount {
   // we're creating a queue to run a single unit of work.
-  DispatchQueue(label: "queue-\(n)").async {
+  queue.async {
     print(Thread.current)
     while true {}
   }
