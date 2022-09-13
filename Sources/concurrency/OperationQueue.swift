@@ -56,7 +56,7 @@ func operationPriorityAndCancellation() {
   operation.cancel()
 }
 
-func operationQueueCoordination() {
+func operationQueueCoordination1() {
   let queue = OperationQueue()
   
   // create an operation that will run on the queue above.

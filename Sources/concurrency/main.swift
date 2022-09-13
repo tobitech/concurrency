@@ -55,4 +55,95 @@ let cancellable = publisher1
 
 _ = cancellable
 
+func operationQueueCoordination() {
+  let queue = OperationQueue()
+  
+  // create an operation that will run on the queue above.
+  let operationA = BlockOperation {
+    print("A")
+    Thread.sleep(forTimeInterval: 1)
+  }
+  
+  let operationB = BlockOperation {
+    print("B")
+  }
+  
+  let operationC = BlockOperation {
+    print("C")
+  }
+  
+  let operationD = BlockOperation {
+    print("D")
+  }
+  
+  // make operationB be dependent on operationA.
+  // this means operationB will not be started until operationA finishes
+  operationB.addDependency(operationA)
+  operationC.addDependency(operationA)
+  operationD.addDependency(operationB)
+  operationD.addDependency(operationC)
+  
+  queue.addOperation(operationA)
+  queue.addOperation(operationB)
+  queue.addOperation(operationC)
+  queue.addOperation(operationD)
+  
+  operationA.cancel()
+  
+  //A ➡️ B
+  //⬇️    ⬇️
+  //C ➡️ D
+}
+
+// let's look at what it looks like to make the cyclical dependency in combine.
+// let's say you have a publisher `a`
+// this is an extremely compact way of expressing a complex dependency relationship between streams of values.
+// this gets at the heart of what Swift's new concurrency tools wants to accomplish.
+//a
+//  .flatMap { a in
+//    zip(b(a), c(a)) // concurrenlty running two units of work (or in parallel)
+//  }
+//  .flatMap { (b, c) in
+//    d(b, c)
+//  }
+
+// This is what we would be able to achieve once we get familiar with Swift's new concurrency APIs.
+// writing complex asynchronous code the way we normally write our normal synchronous codes in our everyday programming.
+//let a = await f()
+//async let b = g(a)
+//async let c = h(a)
+//let d = await i(b, c)
+
+
+//defer { print("Finished") }
+//guard let a = await f()
+//else { return }
+//async let b = g(a)
+//async let c = h(a)
+//let d = await i(b, c)
+
+
+func dispatchDiamondDependency() {
+  let queue = DispatchQueue(label: "queue", attributes: .concurrent)
+  queue.async {
+    print("A")
+    
+    let group = DispatchGroup()
+    queue.async(group: group) {
+      print("B")
+    }
+    queue.async(group: group) {
+      print("C")
+    }
+    
+    group.notify(queue: queue) {
+      print("D")
+    }
+  }
+  
+  //A ➡️ B
+  //⬇️    ⬇️
+  //C ➡️ D
+}
+
 Thread.sleep(forTimeInterval: 2)
