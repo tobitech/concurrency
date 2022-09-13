@@ -45,36 +45,67 @@ func dispatchBasics() {
   print("after scheduling")
 }
 
-// priority is done by specifying a quality of service (qos)
-let queue = DispatchQueue(label: "my.queue", qos: .background)
-
-// you can also get a hold of the unit of work performed just like operation queues by building up a `DispatchWorkItem`.
-var item: DispatchWorkItem!
-// we can't use a capture list in the closure for this one, because the capture list eagerly captures it and because we haven't instantiated it with a value (implicitly unwrapped optional), what is captured is a nil value.
-
-item = DispatchWorkItem {
-  // this helps with the cyclical dependency that has been introduced.
-  // this should release that item from any kind of retain cycle.
-  defer { item = nil }
+func dispatchPriorityAndCancellation() {
+  // priority is done by specifying a quality of service (qos)
+  let queue = DispatchQueue(label: "my.queue", qos: .background)
   
-  let start = Date()
-  defer { print("Finished in", Date().timeIntervalSince(start)) }
+  // you can also get a hold of the unit of work performed just like operation queues by building up a `DispatchWorkItem`.
+  var item: DispatchWorkItem!
+  // we can't use a capture list in the closure for this one, because the capture list eagerly captures it and because we haven't instantiated it with a value (implicitly unwrapped optional), what is captured is a nil value.
   
-  Thread.sleep(forTimeInterval: 1)
-  guard !item.isCancelled else {
-    print("Cancelled!")
-    return
+  item = DispatchWorkItem {
+    // this helps with the cyclical dependency that has been introduced.
+    // this should release that item from any kind of retain cycle.
+    defer { item = nil }
+    
+    let start = Date()
+    defer { print("Finished in", Date().timeIntervalSince(start)) }
+    
+    Thread.sleep(forTimeInterval: 1)
+    guard !item.isCancelled else {
+      print("Cancelled!")
+      return
+    }
+    print(Thread.current)
   }
-  print(Thread.current)
+  
+  queue.async(execute: item)
+  
+  Thread.sleep(forTimeInterval: 0.5)
+  
+  // cancel a work item.
+  // cancellation is also cooperative, it's up to us to be good citizens by regularly checking if the work item has been cancelled so that we can short-circuit the remaining work that needs to be done.
+  item.cancel()
 }
 
+func response(for request: URLRequest) -> HTTPURLResponse {
+  // TODO: do the work to turn request into a response
+  // somehow it finds a way to know what queue we're operating on and get the specific key.
+  let requestId = DispatchQueue.getSpecific(key: requestIdKey)!
+  
+  // so now we can do some units of work, to generate the response e.g. database query, network request, wrap each of them with a log, so we know what is happening on the inside of this request lifecycle.
+  print(requestId, "Making database query")
+  Thread.sleep(forTimeInterval: 0.5) // simulate the idea of making a database query by sleeping for 0.5sec
+  print(requestId, "Finished database query")
+  print(requestId, "Making network request")
+  Thread.sleep(forTimeInterval: 0.5)
+  print(requestId, "Finished network request")
+  
+  // TODO: return real response
+  return .init()
+}
+
+let item = DispatchWorkItem {
+  response(for: .init(url: .init(string: "http://pointfree.co")!))
+}
+let requestIdKey = DispatchSpecificKey<UUID>()
+let requestId = UUID()
+let queue = DispatchQueue(label: "request-\(requestId)", qos: .background)
+
+// This allows us to pluck the request ID out of thin air without having to explicitly pass it through every single layer:
+// as long as we are operating within the execution context of this `queue`, we will have access to it.
+queue.setSpecific(key: requestIdKey, value: requestId)
+
 queue.async(execute: item)
-
-Thread.sleep(forTimeInterval: 0.5)
-
-// cancel a work item.
-// cancellation is also cooperative, it's up to us to be good citizens by regularly checking if the work item has been cancelled so that we can short-circuit the remaining work that needs to be done.
-item.cancel()
-
 
 Thread.sleep(forTimeInterval: 2)
