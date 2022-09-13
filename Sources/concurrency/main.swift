@@ -56,40 +56,53 @@ func operationPriorityAndCancellation() {
   operation.cancel()
 }
 
+func operationQueueCoordination() {
+  let queue = OperationQueue()
+  
+  // create an operation that will run on the queue above.
+  let operationA = BlockOperation {
+    print("A")
+    Thread.sleep(forTimeInterval: 1)
+  }
+  
+  let operationB = BlockOperation {
+    print("B")
+  }
+  
+  let operationC = BlockOperation {
+    print("C")
+  }
+  
+  let operationD = BlockOperation {
+    print("D")
+  }
+  
+  // make operationB be dependent on operationA.
+  // this means operationB will not be started until operationA finishes
+  operationB.addDependency(operationA)
+  operationC.addDependency(operationA)
+  operationD.addDependency(operationB)
+  operationD.addDependency(operationC)
+  
+  queue.addOperation(operationA)
+  queue.addOperation(operationB)
+  queue.addOperation(operationC)
+  queue.addOperation(operationD)
+  
+  //A ➡️ B
+  //⬇️    ⬇️
+  //C ➡️ D
+}
+
 let queue = OperationQueue()
 
-// create an operation that will run on the queue above.
-let operationA = BlockOperation {
-  print("A")
-  Thread.sleep(forTimeInterval: 1)
+// let's see what happens if we add 1,000 operations to the queue
+for n in 0..<workcount {
+  queue.addOperation {
+    // we got not more than 70 threads spun up, meaning about 70 threads to run 1,000 operations.
+    // this is a good thing, because operation queus are working like the thread pool concept we discussed in the last episode.
+    print(n, Thread.current)
+  }
 }
-
-let operationB = BlockOperation {
-  print("B")
-}
-
-let operationC = BlockOperation {
-  print("C")
-}
-
-let operationD = BlockOperation {
-  print("D")
-}
-
-// make operationB be dependent on operationA.
-// this means operationB will not be started until operationA finishes
-operationB.addDependency(operationA)
-operationC.addDependency(operationA)
-operationD.addDependency(operationB)
-operationD.addDependency(operationC)
-
-queue.addOperation(operationA)
-queue.addOperation(operationB)
-queue.addOperation(operationC)
-queue.addOperation(operationD)
-
-//A ➡️ B
-//⬇️    ⬇️
-//C ➡️ D
 
 Thread.sleep(forTimeInterval: 2)
