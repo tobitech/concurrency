@@ -99,6 +99,8 @@ let queue = OperationQueue()
 // let's see what happens if we add 1,000 operations to the queue
 for n in 0..<workcount {
   queue.addOperation {
+    // we're going to hold on for the thread created here just so that we can wait for time to pass.
+    Thread.sleep(forTimeInterval: 1)
     // we got not more than 70 threads spun up, meaning about 70 threads to run 1,000 operations.
     // this is a good thing, because operation queus are working like the thread pool concept we discussed in the last episode.
     print(n, Thread.current)
