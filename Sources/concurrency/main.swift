@@ -25,6 +25,16 @@ let publisher2 = Deferred {
 // in order to get access to the returned value we can subscribe to the publisher with sink()
 // we need to hold on to the cancellable it returns as long as the publisher is alive, in order to keep getting values from it.
 let cancellable = publisher1
+// this shows how we can easily start another work when one finishes
+  .flatMap { integer in
+    Deferred {
+      Future<String, Never> { callback in
+        print(Thread.current)
+        callback(.success("\(integer)"))
+      }
+    }
+  }
+// this shows the power of combine in coordinating two units of work and gettint their results when they both finish.
   .zip(publisher2)
   .sink {
     print("sink", $0, Thread.current) // returns a tuple of (Int, String)
