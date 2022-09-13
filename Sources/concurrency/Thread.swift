@@ -40,7 +40,6 @@ func threadPriorityAndCancellation() {
     }
     
     // this is how co-operative cancellation works.
-    
     guard !Thread.current.isCancelled else {
       print("Cancelled!")
       return
