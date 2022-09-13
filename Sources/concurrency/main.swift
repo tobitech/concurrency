@@ -9,9 +9,9 @@ let queue = DispatchQueue(label: "my.queue", attributes: .concurrent)
 // then you can send units of work to the queue to be performed.
 // this allows us to queue up some asynchronous work.
 // by
-queue.async {
-  print(Thread.current)
-}
+//queue.async {
+//  print(Thread.current)
+//}
 
 //queue.async { print("1", Thread.current) }
 //queue.async { print("2", Thread.current) }
@@ -31,8 +31,16 @@ queue.async {
 
 // just like operation queues, dispatch queues fixes the problem of thread explosion.
 // just few threads about 60 needed to run 1,000 units of work.
-for n in 0..<workcount {
-  queue.async { print(n, Thread.current) }
+//for n in 0..<workcount {
+//  queue.async { print(n, Thread.current) }
+//}
+
+// instead of sleeping a thread for a while which unnecessarily takes up resoures
+// dispatch queue can schedule work to be done in the future.
+print("before scheduling")
+queue.asyncAfter(deadline: .now() + 1) {
+  print("1 second passed")
 }
+print("after scheduling")
 
 Thread.sleep(forTimeInterval: 2)
