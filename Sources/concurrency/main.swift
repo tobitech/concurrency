@@ -126,13 +126,96 @@ func threadStorageAndCoordination() {
 
 let workcount = 1_000
 
-for n in 0..<workcount {
-  let thread = Thread.detachNewThread {
-    print(n, Thread.current)
-    // simulate serious work of downloading a web page and decoding, parsing and indexing by throwing in an infinite loop.
-    while true {}
-    
+func threadPerformance() {
+  for n in 0..<workcount {
+    let thread = Thread.detachNewThread {
+      print(n, Thread.current)
+      // simulate serious work of downloading a web page and decoding, parsing and indexing by throwing in an infinite loop.
+      while true {}
+      
+    }
   }
 }
+
+// suppose we have a mutable state we want to mutate from multiple threads
+class Counter {
+  // introduce a lock to the class
+  let lock = NSLock()
+  // private(set) var count = 0
+  var count = 0
+  
+  // with these we can use our normal way of accessing count outside.
+//  private var _count = 0
+//  var count: Int {
+//    get {
+//      self.lock.lock()
+//      defer { self.lock.unlock() }
+//      return self._count
+//    }
+//    set {
+//      self.lock.lock()
+//      defer { self.lock.unlock() }
+//      self._count = newValue
+//    }
+    // these are not public APIs.
+    // they are similar to get and set, but _modify allows us collapse the 3 step process into a single step.
+    // now we get a 1,000 consistenly when we replaced get and set with these.
+    // this stops working when we try to access the value multiple times.
+//    _read {
+//      self.lock.lock()
+//      defer { self.lock.unlock() }
+//      yield self._count
+//    }
+//    _modify {
+//      self.lock.lock()
+//      defer { self.lock.unlock() }
+//      yield &self._count // yield an inout version of the current one
+//    }
+//  }
+  
+  // we would have private(set) on our count to use this so that it's safe.
+  func increment() {
+    self.lock.lock()
+    defer { self.lock.unlock() }
+    self.count += 1
+  }
+  
+  // our count is still exposed, so we make sure to always use this function rather than accessing the count directly.
+  func modify(work: (Counter) -> Void) {
+    self.lock.lock()
+    defer { self.lock.unlock() }
+    work(self)
+  }
+}
+
+let counter = Counter()
+
+for _ in 0..<1_000 {
+  Thread.detachNewThread {
+    Thread.sleep(forTimeInterval: 0.01)
+    // mutable a field doesn't happen in one single atomic cpu instruction, but rather happens in my instructions
+    // Multiple threads are running those same instructions, and so the instructions will start to become interleaved, allowing for the possibility of one thread overwriting the results of another.
+    // counter.count += 1 // printed 980 instead of 1,000
+    
+    // imagine these as the steps in the instruction
+//    var count1 = counter.count
+//    var count2 = counter.count
+//    count1 += 1
+//    count2 += 1
+//    counter.count = count1
+//    counter.count = count2
+    // counter.increment() // we get a 1,000 consistently every single time we run it.
+    // counter.modify { $0.count += 1 }
+    // counter.count += 1  // this printed 970. the problem is we're locking the setting and getting part but those are not the entire transaction. we solved this with _read & _modify private swift APIs.
+    
+    // if we try to access this another time, we loose the ability to lock the entire transaction
+    // counter.count += 1 + counter.count/100 this doesn't work despite the _read & _modify. this is because not the same lock applies when try to access and modify the value.
+    
+    // we revert back to using our custom modify function to perform all the transactions in a single lock.
+    counter.modify { $0.count += 1 + $0.count/100}
+  }
+}
+Thread.sleep(forTimeInterval: 0.5)
+print("count", counter.count)
 
 Thread.sleep(forTimeInterval: 3)
