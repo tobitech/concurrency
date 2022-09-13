@@ -20,9 +20,18 @@ func operationQueueBasics() {
 // to do that we have to hold on to the operation before handing it off to an operation queue.
 // to do that we have to create an instance of the operation class which means it needs to be subclassed, but Apple ships some subclasses we can use.
 
-//
-let operation = BlockOperation {
+// now we have access to the operation and we can use it inside the block
+let operation = BlockOperation()
+
+// this creates a retain-cycle because the closure is hold by the operation, and the closure is also referencing the operation inside of the block, so we need to weakify it or use unowned.
+// this is how to do cooperative cancellation.
+operation.addExecutionBlock { [unowned operation] in
+  
   Thread.sleep(forTimeInterval: 1)
+  guard !operation.isCancelled else {
+    print("Cancelled!")
+    return // short-circuit any other work.
+  }
   print(Thread.current)
 }
 
