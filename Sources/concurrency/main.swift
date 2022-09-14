@@ -223,13 +223,13 @@ func response(for request: URLRequest) async throws -> HTTPURLResponse {
   return .init()
 }
 
-RequestData.$requestId.withValue(UUID()) {
-  RequestData.$startDate.withValue(Date()) {
-    Task {
-      _ = try await response(for: .init(url: .init(string: "https://www.pointfree.co")!))
-    }
-  }
-}
+//RequestData.$requestId.withValue(UUID()) {
+//  RequestData.$startDate.withValue(Date()) {
+//    Task {
+//      _ = try await response(for: .init(url: .init(string: "https://www.pointfree.co")!))
+//    }
+//  }
+//}
 
 // this namespacing can also be used to house other Task locals we might want to use throughout the application.
 // Alternatively you could also define a single struct to hold all of these values and then have a single @TaskLocal.
@@ -276,5 +276,40 @@ RequestData.$requestId.withValue(UUID()) {
 //  }
 //}
 // print("after:", MyLocals.id) // nil
+
+//for _ in 0..<workcount {
+//  Thread.detachNewThread {
+//    while true { } // simulate something intense
+//  }
+//}
+
+// without all the thread contention above, it takes about 0.089sec to run.
+// this shows how in Threads two many threads are created that contends with this one for resources.
+// all these thread contention can hurt the performance of other threads that need to do their job
+//Thread.detachNewThread {
+//  print("Starting prime thread") // takes a long time to get the prime
+//  nthPrime(50_000)
+//}
+
+for n in 0..<workcount {
+  Task {
+    // all the concurrent cooperative thread are just blocked in this while loop.
+    // this looks like a step back for wanting to write code that executes simultaneously.
+    // to solve this we should use non-blocking APIs for asynchronous work
+    // while true { } // simulate something intense
+    
+    // non-blocking asynchronous work done by URLSession.
+    // assuming we want to load 1,000 1MB files.
+    // running this: notice that our nthPrime Task immediately returns a response.
+    let (data, _) = try await URLSession.shared.data(from: .init(string: "https://ipv4.download.thinkbroadband.com/1MB.zip")!)
+    print(n, Thread.current)
+  }
+}
+
+Task {
+  print("Starting prime thread") // seems this task isn't even getting a chance to start.
+  nthPrime(50_000)
+}
+
 
 Thread.sleep(forTimeInterval: 5)
