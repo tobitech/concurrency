@@ -291,8 +291,8 @@ func response(for request: URLRequest) async throws -> HTTPURLResponse {
 //  nthPrime(50_000)
 //}
 
-for n in 0..<workcount {
-  Task {
+//for n in 0..<workcount {
+//  Task {
     // all the concurrent cooperative thread are just blocked in this while loop.
     // this looks like a step back for wanting to write code that executes simultaneously.
     // to solve this we should use non-blocking APIs for asynchronous work
@@ -301,8 +301,22 @@ for n in 0..<workcount {
     // non-blocking asynchronous work done by URLSession.
     // assuming we want to load 1,000 1MB files.
     // running this: notice that our nthPrime Task immediately returns a response.
-    let (data, _) = try await URLSession.shared.data(from: .init(string: "https://ipv4.download.thinkbroadband.com/1MB.zip")!)
-    print(n, Thread.current)
+//    let (data, _) = try await URLSession.shared.data(from: .init(string: "https://ipv4.download.thinkbroadband.com/1MB.zip")!)
+//    print(n, Thread.current)
+//  }
+//}
+
+// if we can't use Task.sleep or any of those Apple's non-blocking asynchronous APIs,
+// we can use `yield` to give up some resources so that other Tasks can use.
+for _ in 0..<workcount {
+  Task {
+    // simulate something intense
+    // with yield the nthPrime task runs immediately 
+    while true {
+      await Task.yield() // we're creating a suspension point so that other tasks will get a turn on this thread.
+      // at at some later time, when the runtime has felt it has giving enough time to other tasks it will resume us.
+      // this is an important tool for cooperation.
+    }
   }
 }
 
