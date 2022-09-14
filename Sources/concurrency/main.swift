@@ -110,10 +110,25 @@ func taskPriority() {
   }
 }
 
+// prints out nil - cause we aren't in any Task context.
+//withUnsafeCurrentTask { task in
+//  print(task)
+//}
+
 // tasks supports cancellation.
 // the print statement still executes event though we cancelled immediately.
 // seems task are kind of more eager if though we cancelled just after creating.
 let task = Task {
+  // Thread.current.isCancelled
+  
+  // Task.current not available
+  // but there is still a way to get the current Task.
+  // we're handed the current task in this closure.
+  withUnsafeCurrentTask { task in
+    print(task) // prints out Optional(Swift.UnsafeCurrentTask(_task: (Opaque Value)))
+  }
+  
+  // `isCancelled` magically figures out the current local context.
   guard !Task.isCancelled else {
     print("Cancelled!")
     // TODO: short-circuit the rest of the work in the task
