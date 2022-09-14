@@ -176,62 +176,100 @@ func taskCancellation() {
   task.cancel()
 }
 
+enum RequestData {
+  @TaskLocal static var requestId: UUID!
+  @TaskLocal static var startDate: Date!
+}
+
+func databaseQuery() async throws {
+  let requestId = RequestData.requestId!
+  print(requestId, "Making database query")
+  try await Task.sleep(nanoseconds: 500_000_000)
+  print(requestId, "Finished database query")
+}
+
+func networkRequest() async throws {
+  let requestId = RequestData.requestId!
+  print(requestId, "Making network request")
+  try await Task.sleep(nanoseconds: 500_000_000)
+  print(requestId, "Finished network request")
+}
+
 // now we can improve on how we approach this in the past
 // and mark this function as async.
 // this move the responsibility of creating an asynchronous and failable context to the caller of the function.
 func response(for request: URLRequest) async throws -> HTTPURLResponse {
+  let requestId = RequestData.requestId!
+  let start = RequestData.startDate!
+  
+  defer { print(requestId, "Request finished in", Date().timeIntervalSince(start)) }
+  
+  // even deeper in these async contexts, we still have access to the requestId
+  try await databaseQuery()
+  try await networkRequest()
+//  print(requestId, "Making database query")
+//  try await Task.sleep(nanoseconds: 500_000_000)
+//  print(requestId, "Finished database query")
+//  print(requestId, "Making network request")
+//  try await Task.sleep(nanoseconds: 500_000_000)
+//  print(requestId, "Finished network request")
+  
   // TODO: do some work to actually generate a response
   return .init()
 }
 
-Task {
-  _ = try await response(for: .init(url: .init(string: "https://www.pointfree.co")!))
+RequestData.$requestId.withValue(UUID()) {
+  RequestData.$startDate.withValue(Date()) {
+    Task {
+      _ = try await response(for: .init(url: .init(string: "https://www.pointfree.co")!))
+    }
+  }
 }
 
 // this namespacing can also be used to house other Task locals we might want to use throughout the application.
 // Alternatively you could also define a single struct to hold all of these values and then have a single @TaskLocal.
-enum MyLocals {
+//enum MyLocals {
   // we're using implicitly uwrapped optional here so that it louds a failure whenever you access an uninitialized task local.
-  @TaskLocal static var id: Int!
+//  @TaskLocal static var id: Int!
   
   // Other Task locals
   // @TaskLocal var api: APIClient
   // @TaskLocal var database: DatabaseClient
   // @TaskLocal var stripe: StripeClient
-}
+//}
 
-func doSomething() async {
-  print("doSomething:", MyLocals.id!)
-}
+//func doSomething() async {
+//  print("doSomething:", MyLocals.id!)
+//}
 
-print("before:", MyLocals.id) // this prints nil if not initialized
+// print("before:", MyLocals.id) // this prints nil if not initialized
 // to initialize it we use a method on the property wrapper:
-MyLocals.$id.withValue(42) {
-  print("withValue:", MyLocals.id!) // 42
+//MyLocals.$id.withValue(42) {
+//  print("withValue:", MyLocals.id!) // 42
   
   // how to retain the local much longer
 //  Task {
     // print("Task:", MyLocals.id!) // prints 42 even though the Task's closure has escaped from the operation closure we're using in withValue: it executed after the local went nil.
 //  }
   
-  Task {
-    MyLocals.$id.withValue(1729) {
+//  Task {
+//    MyLocals.$id.withValue(1729) {
       // spin off another Task that inherits those locals
-      Task {
-        try await Task.sleep(nanoseconds: 2 * NSEC_PER_SEC)
-        print("Task 2:", MyLocals.id!)
-      }
-    }
+//      Task {
+//        try await Task.sleep(nanoseconds: 2 * NSEC_PER_SEC)
+//        print("Task 2:", MyLocals.id!)
+//      }
+//    }
     
-    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
-    Task {
+//    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//    Task {
       // this still prints 42. this is because the moment we create a task,
       // it captures all the Task's local
-      print("Task:", MyLocals.id!) // still printed 42
-      await doSomething()
-    }
-  }
-}
-print("after:", MyLocals.id) // nil
+//      print("Task:", MyLocals.id!) // still printed 42
+//      await doSomething()
+//    }
+//  }
+//}
+// print("after:", MyLocals.id) // nil
 
 Thread.sleep(forTimeInterval: 5)
