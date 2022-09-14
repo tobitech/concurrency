@@ -204,6 +204,11 @@ func response(for request: URLRequest) async throws -> HTTPURLResponse {
   
   defer { print(requestId, "Request finished in", Date().timeIntervalSince(start)) }
   
+  // assuming we want to track analytics data with a fire and forget operation.
+  // this also have access to the requestId.
+  Task {
+    print(RequestData.requestId!, "Track analytics")
+  }
   // even deeper in these async contexts, we still have access to the requestId
   try await databaseQuery()
   try await networkRequest()
