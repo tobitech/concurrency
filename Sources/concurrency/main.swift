@@ -118,23 +118,36 @@ func taskPriority() {
 // tasks supports cancellation.
 // the print statement still executes event though we cancelled immediately.
 // seems task are kind of more eager if though we cancelled just after creating.
-let task = Task {
+//let task = Task {
   // Thread.current.isCancelled
   
   // Task.current not available
   // but there is still a way to get the current Task.
   // we're handed the current task in this closure.
-  withUnsafeCurrentTask { task in
-    print(task) // prints out Optional(Swift.UnsafeCurrentTask(_task: (Opaque Value)))
-  }
+//  withUnsafeCurrentTask { task in
+    // print(task) // prints out Optional(Swift.UnsafeCurrentTask(_task: (Opaque Value)))
+//  }
   
   // `isCancelled` magically figures out the current local context.
-  guard !Task.isCancelled else {
-    print("Cancelled!")
+//  guard !Task.isCancelled else {
+//    print("Cancelled!")
     // TODO: short-circuit the rest of the work in the task
     // clean up some resources here
-    return
-  }
+//    return
+//  }
+//  print(Thread.current)
+//}
+
+let task = Task {
+//  guard !Task.isCancelled else {
+//    print("Cancelled!")
+//    return
+//  }
+  // cooperative cancellation integrates with failable context
+  // this will throw and short-circuit the rest of the task
+  // if he detects that the current task has been cancelled
+  // this can be more ergonomic than checking the boolean isCancelled on Task.
+  try Task.checkCancellation()
   print(Thread.current)
 }
 
