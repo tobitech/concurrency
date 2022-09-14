@@ -61,4 +61,42 @@ func doSomethingElseAsync() async {
 // dataTask: (URL, completionHandler: (Data?, Response?, Error?) -> Void) -> Void
 // start: ((MKLocalSearch.Response?, Error?) -> Void) -> Void
 
+//Task { print("1", Thread.current) }
+//Task { print("2", Thread.current) }
+//Task { print("3", Thread.current) }
+//Task { print("4", Thread.current) }
+//Task { print("5", Thread.current) }
+
+// Just like Threads and OperationQueues, order or thread is non-deterministic
+//5 <NSThread: 0x10130c040>{number = 6, name = (null)}
+//3 <NSThread: 0x1011092f0>{number = 3, name = (null)}
+//2 <NSThread: 0x10070c2f0>{number = 2, name = (null)}
+//1 <NSThread: 0x10107db00>{number = 4, name = (null)}
+//4 <NSThread: 0x1011320d0>{number = 5, name = (null)}
+
+// drastically improves on thread explosion issue with a thread pool compared to  Threads and Queues.
+//for n in 0..<workcount {
+//  Task {
+    // this sleep is different from Thread.sleep.
+    // it does pause the current task for an amount of time but it does that in a non-blocking manner.
+//    try await Task.sleep(nanoseconds: NSEC_PER_SEC * 1000)
+//    print(n, Thread.current) // only about 10-13 threads were created.
+//  }
+//}
+
+// demo to show that after sleeping a thread (non-blocking),
+// our task can be resumed on any thread, not just the one we started on.
+// care should be taken to not assume that our tasks will resume on the same threads after suspension.
+for n in 0..<workcount {
+  Task {
+    let current = Thread.current
+    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+    if current != Thread.current {
+      print("Thread changed from", current, "to", Thread.current)
+    }
+  }
+}
+
+
+
 Thread.sleep(forTimeInterval: 2)
