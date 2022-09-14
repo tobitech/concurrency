@@ -110,68 +110,128 @@ func taskPriority() {
   }
 }
 
-// prints out nil - cause we aren't in any Task context.
-//withUnsafeCurrentTask { task in
-//  print(task)
-//}
-
-// tasks supports cancellation.
-// the print statement still executes event though we cancelled immediately.
-// seems task are kind of more eager if though we cancelled just after creating.
-//let task = Task {
+func taskCancellation() {
+  // prints out nil - cause we aren't in any Task context.
+  //withUnsafeCurrentTask { task in
+  //  print(task)
+  //}
+  
+  // tasks supports cancellation.
+  // the print statement still executes event though we cancelled immediately.
+  // seems task are kind of more eager if though we cancelled just after creating.
+  //let task = Task {
   // Thread.current.isCancelled
   
   // Task.current not available
   // but there is still a way to get the current Task.
   // we're handed the current task in this closure.
-//  withUnsafeCurrentTask { task in
-    // print(task) // prints out Optional(Swift.UnsafeCurrentTask(_task: (Opaque Value)))
-//  }
+  //  withUnsafeCurrentTask { task in
+  // print(task) // prints out Optional(Swift.UnsafeCurrentTask(_task: (Opaque Value)))
+  //  }
   
   // `isCancelled` magically figures out the current local context.
-//  guard !Task.isCancelled else {
-//    print("Cancelled!")
-    // TODO: short-circuit the rest of the work in the task
-    // clean up some resources here
-//    return
-//  }
-//  print(Thread.current)
-//}
-
-//let task = Task {
-//  guard !Task.isCancelled else {
-//    print("Cancelled!")
-//    return
-//  }
+  //  guard !Task.isCancelled else {
+  //    print("Cancelled!")
+  // TODO: short-circuit the rest of the work in the task
+  // clean up some resources here
+  //    return
+  //  }
+  //  print(Thread.current)
+  //}
+  
+  //let task = Task {
+  //  guard !Task.isCancelled else {
+  //    print("Cancelled!")
+  //    return
+  //  }
   // cooperative cancellation integrates with failable context
   // this will throw and short-circuit the rest of the task
   // if he detects that the current task has been cancelled
   // this can be more ergonomic than checking the boolean isCancelled on Task.
-//  try Task.checkCancellation()
-//  print(Thread.current)
-//}
-
-func doSomething() async throws {
-  try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+  //  try Task.checkCancellation()
+  //  print(Thread.current)
+  //}
+  
+  func doSomething() async throws {
+    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+  }
+  
+  let task = Task {
+    let start = Date()
+    defer { print("Task finished in", Date().timeIntervalSince(start)) }
+    
+    // Task.sleep is a throwing function so that it can short-circuit the rest of the work when it detects cancellation.
+    // this is in stark contrast to how Threads and DispatchQueues work.
+    // try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+    // try await doSomething() // this works the same as the above.
+    
+    // now instead of sleeping, let's make a network request that takes long to respond.
+    let (data, _) = try await URLSession.shared.data(from: .init(string: "http://ipv4.download.thinkbroadband.com/1MB.zip")!)
+    
+    print(Thread.current, "network request finished", data.count)
+  }
+  
+  Thread.sleep(forTimeInterval: 0.5)
+  
+  task.cancel()
 }
 
-let task = Task {
-  let start = Date()
-  defer { print("Task finished in", Date().timeIntervalSince(start)) }
-  
-  // Task.sleep is a throwing function so that it can short-circuit the rest of the work when it detects cancellation.
-  // this is in stark contrast to how Threads and DispatchQueues work.
-  // try await Task.sleep(nanoseconds: NSEC_PER_SEC)
-  // try await doSomething() // this works the same as the above.
-  
-  // now instead of sleeping, let's make a network request that takes long to respond.
-  let (data, _) = try await URLSession.shared.data(from: .init(string: "http://ipv4.download.thinkbroadband.com/1MB.zip")!)
-  
-  print(Thread.current, "network request finished", data.count)
+// now we can improve on how we approach this in the past
+// and mark this function as async.
+// this move the responsibility of creating an asynchronous and failable context to the caller of the function.
+func response(for request: URLRequest) async throws -> HTTPURLResponse {
+  // TODO: do some work to actually generate a response
+  return .init()
 }
 
-Thread.sleep(forTimeInterval: 0.5)
+Task {
+  _ = try await response(for: .init(url: .init(string: "https://www.pointfree.co")!))
+}
 
-task.cancel()
+// this namespacing can also be used to house other Task locals we might want to use throughout the application.
+// Alternatively you could also define a single struct to hold all of these values and then have a single @TaskLocal.
+enum MyLocals {
+  // we're using implicitly uwrapped optional here so that it louds a failure whenever you access an uninitialized task local.
+  @TaskLocal static var id: Int!
+  
+  // Other Task locals
+  // @TaskLocal var api: APIClient
+  // @TaskLocal var database: DatabaseClient
+  // @TaskLocal var stripe: StripeClient
+}
 
-Thread.sleep(forTimeInterval: 2)
+func doSomething() async {
+  print("doSomething:", MyLocals.id!)
+}
+
+print("before:", MyLocals.id) // this prints nil if not initialized
+// to initialize it we use a method on the property wrapper:
+MyLocals.$id.withValue(42) {
+  print("withValue:", MyLocals.id!) // 42
+  
+  // how to retain the local much longer
+//  Task {
+    // print("Task:", MyLocals.id!) // prints 42 even though the Task's closure has escaped from the operation closure we're using in withValue: it executed after the local went nil.
+//  }
+  
+  Task {
+    MyLocals.$id.withValue(1729) {
+      // spin off another Task that inherits those locals
+      Task {
+        try await Task.sleep(nanoseconds: 2 * NSEC_PER_SEC)
+        print("Task 2:", MyLocals.id!)
+      }
+    }
+    
+    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+    Task {
+      // this still prints 42. this is because the moment we create a task,
+      // it captures all the Task's local
+      print("Task:", MyLocals.id!) // still printed 42
+      await doSomething()
+    }
+  }
+}
+print("after:", MyLocals.id) // nil
+
+Thread.sleep(forTimeInterval: 5)
