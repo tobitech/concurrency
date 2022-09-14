@@ -1,149 +1,64 @@
-import Combine
 import Foundation
 
-// This is eager by default, so as soon as you create the `Future` publisher, it starts doing its work.
-//let publisher = Future<Int, Never> { callback in
-//  print(Thread.current)
-//  callback(.success(42))
+// The fundamental unit for creating an asynchronous context is known as Task, and it can be created in a way similar to threads and dispatch work items:
+// let task: Task<(), Never> // generic over two types.
+// The first is the type of value that will be produced from the task after the asynchronous work is finished.
+// Right now it’s void to represent that it doesn’t produce anything of interest. And the second generic is the type of error that can thrown inside the closure. Since Swift does not support typed throws (yet) this generic will always be either Never to represent it cannot fail, or Error to represent that any kind of error can be throw.
+//let task = Task {
+//  print(Thread.current) // prints a new thread, and is not the main thread
 //}
 
-// Wrapp it with a Deferred publisher to make it lazy just like we needed to call start on Threads, needed to send a BlockOperation to an OperationQueue, needed to send a work item to a DispatchQueue.
-let publisher1 = Deferred {
-  Future<Int, Never> { callback in
-    print(Thread.current)
-    callback(.success(42))
-  }
-}
-  .subscribe(on: DispatchQueue(label: "queue1"))
+// type has changed to let task: Task<Int, Never>
+//let task = Task {
+//  42
+//}
 
-let publisher2 = Deferred {
-  Future<String, Never> { callback in
-    print(Thread.current)
-    callback(.success("Hello, world!"))
-  }
-}
-  .subscribe(on: DispatchQueue(label: "queue2"))
-
-// in order to get access to the returned value we can subscribe to the publisher with sink()
-// we need to hold on to the cancellable it returns as long as the publisher is alive, in order to keep getting values from it.
-let cancellable = publisher1
-// this shows how we can easily start another work when one finishes
-  .flatMap { integer in
-    Deferred {
-      Future<String, Never> { callback in
-        print(Thread.current)
-        callback(.success("\(integer)"))
-      }
-    }
-    .subscribe(on: DispatchQueue(label: "queue3"))
-  }
-// this shows the power of combine in coordinating two units of work and gettint their results when they both finish.
-  .zip(publisher2)
-  .sink {
-    print("sink", $0, Thread.current) // returns a tuple of (Int, String)
-  }
-
-// without subscribe(on:)
-//<_NSMainThread: 0x10710aac0>{number = 1, name = main}
-//sink 42 <_NSMainThread: 0x10710aac0>{number = 1, name = main}
-
-// when we used subscribe(on:)
-//<NSThread: 0x101504930>{number = 3, name = (null)}
-//<NSThread: 0x101238470>{number = 2, name = (null)}
-//<NSThread: 0x101504930>{number = 3, name = (null)}
-//sink ("42", "Hello, world!") <NSThread: 0x101504930>{number = 3, name = (null)}
-
-_ = cancellable
-
-func operationQueueCoordination() {
-  let queue = OperationQueue()
-  
-  // create an operation that will run on the queue above.
-  let operationA = BlockOperation {
-    print("A")
-    Thread.sleep(forTimeInterval: 1)
-  }
-  
-  let operationB = BlockOperation {
-    print("B")
-  }
-  
-  let operationC = BlockOperation {
-    print("C")
-  }
-  
-  let operationD = BlockOperation {
-    print("D")
-  }
-  
-  // make operationB be dependent on operationA.
-  // this means operationB will not be started until operationA finishes
-  operationB.addDependency(operationA)
-  operationC.addDependency(operationA)
-  operationD.addDependency(operationB)
-  operationD.addDependency(operationC)
-  
-  queue.addOperation(operationA)
-  queue.addOperation(operationB)
-  queue.addOperation(operationC)
-  queue.addOperation(operationD)
-  
-  operationA.cancel()
-  
-  //A ➡️ B
-  //⬇️    ⬇️
-  //C ➡️ D
+let task = Task<Int, Error>.init {
+  struct SomeError: Error { }
+  throw SomeError()
+  return 42
 }
 
-// let's look at what it looks like to make the cyclical dependency in combine.
-// let's say you have a publisher `a`
-// this is an extremely compact way of expressing a complex dependency relationship between streams of values.
-// this gets at the heart of what Swift's new concurrency tools wants to accomplish.
-//a
-//  .flatMap { a in
-//    zip(b(a), c(a)) // concurrenlty running two units of work (or in parallel)
-//  }
-//  .flatMap { (b, c) in
-//    d(b, c)
-//  }
+// let's look at the Task init() method.
+//public init(priority: TaskPriority? = nil, operation: @escaping @Sendable () async throws -> Success)
 
-// This is what we would be able to achieve once we get familiar with Swift's new concurrency APIs.
-// writing complex asynchronous code the way we normally write our normal synchronous codes in our everyday programming.
-//let a = await f()
-//async let b = g(a)
-//async let c = h(a)
-//let d = await i(b, c)
+func doSomethingAsync() async {}
 
+// trying to invoke a function marked with async throws a compiler error.
+// 🛑 'async' call in a function that does not support concurrency
+// this is because where we're calling it is not an asynchronous context.
+// doSomethingAsync()
 
-//defer { print("Finished") }
-//guard let a = await f()
-//else { return }
-//async let b = g(a)
-//async let c = h(a)
-//let d = await i(b, c)
-
-
-func dispatchDiamondDependency() {
-  let queue = DispatchQueue(label: "queue", attributes: .concurrent)
-  queue.async {
-    print("A")
-    
-    let group = DispatchGroup()
-    queue.async(group: group) {
-      print("B")
-    }
-    queue.async(group: group) {
-      print("C")
-    }
-    
-    group.notify(queue: queue) {
-      print("D")
-    }
-  }
-  
-  //A ➡️ B
-  //⬇️    ⬇️
-  //C ➡️ D
+// we can wrap it in a `Task { }` to introduce an async context.
+// and we would have to use the await keyword in front of the call.
+// the Task.init() introduces a brand new async context to work in and then executes our async closure in that context.
+Task {
+  // the use of await here creates something known as a suspension point.
+  await doSomethingAsync()
 }
+
+// we can call out async functions from other async functions
+// notice that we're getting compile time distinction between asynchronous code and synchronous code.
+func doSomethingElseAsync() async {
+  await doSomethingAsync()
+}
+
+// It’s worth mentioning that decorating functions with these little keywords can be thought of as a sugar-fied version of a function that returns tasks and results. For example, a throwing function like this:
+// (A) throws -> B
+// Can be thought of as a function that drops the throws keyword and just returns a result instead:
+// (A) -> Result<B, Error>
+// Learn more about these patterns in the episodes transcript.
+
+// (inout A) -> B
+// (A) -> (B, A)
+
+// (A) async -> B // sugard version
+// (A) -> Task<B, Never> // unsugared version
+// (A) -> ((B) -> Void) -> Void // curried version
+// (A, (B) -> Void) -> Void // uncurried version. this is the fundamental shape of a completion handler.
+
+// most of Apple's asynchronous APIs have this shape
+// dataTask: (URL, completionHandler: (Data?, Response?, Error?) -> Void) -> Void
+// start: ((MKLocalSearch.Response?, Error?) -> Void) -> Void
 
 Thread.sleep(forTimeInterval: 2)
