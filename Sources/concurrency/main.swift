@@ -138,7 +138,7 @@ func taskPriority() {
 //  print(Thread.current)
 //}
 
-let task = Task {
+//let task = Task {
 //  guard !Task.isCancelled else {
 //    print("Cancelled!")
 //    return
@@ -147,9 +147,30 @@ let task = Task {
   // this will throw and short-circuit the rest of the task
   // if he detects that the current task has been cancelled
   // this can be more ergonomic than checking the boolean isCancelled on Task.
-  try Task.checkCancellation()
-  print(Thread.current)
+//  try Task.checkCancellation()
+//  print(Thread.current)
+//}
+
+func doSomething() async throws {
+  try await Task.sleep(nanoseconds: NSEC_PER_SEC)
 }
+
+let task = Task {
+  let start = Date()
+  defer { print("Task finished in", Date().timeIntervalSince(start)) }
+  
+  // Task.sleep is a throwing function so that it can short-circuit the rest of the work when it detects cancellation.
+  // this is in stark contrast to how Threads and DispatchQueues work.
+  // try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+  // try await doSomething() // this works the same as the above.
+  
+  // now instead of sleeping, let's make a network request that takes long to respond.
+  let (data, _) = try await URLSession.shared.data(from: .init(string: "http://ipv4.download.thinkbroadband.com/1MB.zip")!)
+  
+  print(Thread.current, "network request finished", data.count)
+}
+
+Thread.sleep(forTimeInterval: 0.5)
 
 task.cancel()
 
