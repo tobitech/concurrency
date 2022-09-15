@@ -327,17 +327,17 @@ func taskStorageAndCooperation() {
   }
 }
 
-class Counter {
-  let lock = NSLock()
-  var count: Int = 0
-  func increment() {
-    self.lock.lock()
-    defer { self.lock.unlock() }
-    self.count += 1
-  }
-}
+//class Counter {
+//  let lock = NSLock()
+//  var count: Int = 0
+//  func increment() {
+//    self.lock.lock()
+//    defer { self.lock.unlock() }
+//    self.count += 1
+//  }
+//}
 
-let counter = Counter()
+// let counter = Counter()
 
 //for _ in 0..<workcount {
 //  Task {
@@ -503,24 +503,24 @@ let counter = Counter()
 // We have to mark it as final, because another subclass of the class can introduce some non-sendable things, such as introducing mutable state. That removes the first warning.
 // Change `var` to let to address the second warning.
 // Now we get rid of all the warnings. Although we now have limited capabilities since the class can no longer change its internal states at all which makes it behave similar to the struct version we had, but that's the cost of doing business with multithreaded code
-func doSomething() {
+// func doSomething() {
   // class User: Sendable { // ⚠️ Non-final class 'User' cannot conform to 'Sendable'; use '@unchecked Sendable'
-  final class User: Sendable {
+  // final class User: Sendable {
     // var id: Int // ⚠️ Stored property 'id' of 'Sendable'-conforming class 'User' is mutable
     // var name: String // ⚠️ Stored property 'id' of 'Sendable'-conforming class 'User' is mutable
-    let id: Int
-    let name: String
-    
-    init(id: Int, name: String) {
-      self.id = id
-      self.name = name
-    }
-  }
-  let user = User(id: 42, name: "Blob")
-  Task {
-    print(user)
-  }
-}
+//    let id: Int
+//    let name: String
+//
+//    init(id: Int, name: String) {
+//      self.id = id
+//      self.name = name
+//    }
+//  }
+//  let user = User(id: 42, name: "Blob")
+//  Task {
+//    print(user)
+//  }
+//}
 
 // The Swift compiler doesn't know we've added some work to make it safe to work with in asychronous contexts.
 // that's why when we mark this as Sendable, we still get those warnings.
@@ -531,6 +531,7 @@ func doSomething() {
 // But since we're sure we've done some work to make it safe we can use @unchecked Sendable to get rid of the warning.
 // So we should know that anytime we use @unchecked Sendable, we are operating totally outside of the pureview of the compiler.
 // It's actually possible that in the future we introduce changes to state that makes it no longer safe to pass across concurrent boundaries and swift will not be able to detect that.
+// Swift gives us some tools to deal with this situation, we will look at that later.
 //class Counter: Sendable {
 //class Counter: @unchecked Sendable {
 //  let lock = NSLock()
@@ -541,5 +542,185 @@ func doSomething() {
 //    self.count += 1
 //  }
 //}
+
+// Let's explore @Sendable attribute to closures.
+class Counter {
+  let lock = NSLock()
+  var count: Int = 0
+  func increment() {
+    self.lock.lock()
+    defer { self.lock.unlock() }
+    self.count += 1
+  }
+}
+
+func doSomething() {
+  let counter = Counter()
+  
+  Task {
+    counter.increment() // ⚠️ Capture of 'counter' with non-sendable type 'Counter' in a `@Sendable` closure
+  }
+}
+
+// Refresher on @escaping
+// It restricts how you're allowed to use a closure that is passed to a function
+
+// consider a normal function that takes a closure.
+//func perform(work: () -> Void) {
+//  print("begin")
+//  // we can invoke the closure within the lifetime of `perform`
+//  work()
+//  // we can even invoke it a bunch of times
+//  work()
+//  // we can also sprinkle little bit of work in between invoking it
+//  print("middle")
+//  work()
+//  print("middle")
+//  work()
+//  print("end")
+//}
+
+// Now assuming you want to do some more interesting things you will most likely butt heads with the compiler.
+// something like making a network request then calling the closure afterwards.
+// if we do that, we get a compiler error that our closure `work()` is not marked as escaping but we are using it in an escaping context.
+// swift is complaining because we can only execure work after the long work has ended
+// without distinction between escaping and non-escaping closures, we can write a lot of seemingly reasonable code that will be capable of doing some unreasonable things
+// func perform(work: () -> Void) {
+  // print("begin")
+  // this isn't allowed
+//  URLSession.shared.dataTask(with: .init(string: "http://ipv4.download.thinkbroadband.com/1MB.zip")!) { _, _, _ in // 🛑 Escaping closure captures non-escaping parameter 'work'
+//    work()
+//  }
+  
+  // this is not allowed as well
+  // 🛑 Escaping closure captures non-escaping parameter 'work'
+//  DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+//    work()
+//  }
+  // print("end")
+//}
+
+// It prints accordingly
+//perform {
+//  print("Hello")
+//}
+
+//func incrementAfterOneSecond(value: inout Int) {
+//  // 🛑 Escaping closure captures 'inout' parameter 'value'
+//  DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+//    value += 1
+//  }
+//}
+
+// if the above were to be valid (without compiler error)
+// do we expect count to be 0? or 1?
+//var count = 0
+//incrementAfterOneSecond(value: &count)
+//assert(count == 0) // we expect it to be 0 here since increment doesn't happen until after 1 sec
+//Thread.sleep(forTimeInterval: 1) // so let's sleep for 1sec and see what count is
+// what do we expect count to be. if we get 1 that will be weird because there was no mutable between the first assertion after the time we slept for.
+// it will make value types seem as though they're reference types.
+// this kind of scenario is exactly what value types were created for to avoid.
+// so the Swift compiler is preventing us from writing code that does not make sense, it is just not valid to pass a mutable value type (inout data) that can cross an escaping boundary.
+// only non-inout values are allowed to cross escaping boundaries.
+// so if we really wanted to implement the increment function, we will use a reference type rather than a value type.
+// assert(count == 1)
+
+// Notice we didn't get the error we got when we used `inout`
+//func incrementAfterOneSecond(counter: Counter) {
+//  DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+//    counter.increment()
+//  }
+//}
+
+//var counter = Counter()
+//incrementAfterOneSecond(counter: counter) // ⚠️ Reference to var 'counter' is not concurrency-safe because it involves shared mutable state
+//assert(counter.count == 0) // ⚠️ Reference to var 'counter' is not concurrency-safe because it involves shared mutable state
+//Thread.sleep(forTimeInterval: 1)
+//assert(counter.count == 1) // ⚠️ Reference to var 'counter' is not concurrency-safe because it involves shared mutable state
+
+// Now when we use escaping, the error goes away.
+// By using @escaping here we're restricting what kind of closure we're allowed to be passed to perform(:) since it's going to be used asynchronously.
+//func perform(work: @escaping () -> Void) {
+//  print("begin")
+  // this isn't allowed
+  //  URLSession.shared.dataTask(with: .init(string: "http://ipv4.download.thinkbroadband.com/1MB.zip")!) { _, _, _ in // 🛑 Escaping closure captures non-escaping parameter 'work'
+  //    work()
+  //  }
+  
+  // this is not allowed as well
+//  DispatchQueue(label: "delay").asyncAfter(deadline: .now() + 1) {
+//    work()
+//  }
+//  print("end")
+//}
+
+// It prints after 1sec.
+// but the order is somehow weird
+// begin
+//end
+//hello
+//perform {
+//  print("hello")
+//}
+
+// Swift async keyword defines one kind of asynchrony and we're allowed to not use @escaping for that one kind without getting error. (This is counter-intuitive)
+// the only difference of this non-escaping one is that we can only call perform when we have an async context available.
+//func perform(work: () -> Void) async throws {
+//  print("begin")
+//  try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//  work() // we're calling this outside of an escaping context
+  // we could even do other asynchronous work here, like sleeping couple of times
+  // we get this printed
+  // begin
+  // hello
+  // hello
+  // hello
+  // end
+//  try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//  work()
+//  try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//  work()
+  // or a network request
+//    _ = try await URLSession.shared.dataTask(with: .init(string: "http://ipv4.download.thinkbroadband.com/1MB.zip")!)
+//  work()
+//  print("end")
+//}
+
+// It prints in a much better order
+// begin
+//hello
+//end
+//Task {
+//  try await perform {
+//    print("hello")
+//  }
+//}
+
+// We could even access an inout value inside the closure
+// this seems scary but Swift knows the perform function is asynchronous and it knows that it will complete once all the asynchronous work is done, therefore there is no need for an escaping closure.
+//func perform(value: inout Int, work: () -> Void) async throws {
+//  print("begin")
+//
+//  let (data, _) = try await URLSession.shared.data(from: .init(string: "http://ipv4.download.thinkbroadband.com/1MB.zip")!)
+//  work()
+//  value += data.count
+//  print("end")
+//}
+
+// It prints in a much better order
+// begin
+// hello
+// end
+// count 1048576
+//Task {
+//  var count = 0
+//  try await perform(value: &count) {
+//    print("hello")
+//  }
+//  print(count)
+//}
+
+// The @Sendable attribute is very similar, except instead of protecting you from passing unsafe closures to asynchronous contexts it protects you from passing unsafe closures to concurrent contexts.
 
 Thread.sleep(forTimeInterval: 5)
