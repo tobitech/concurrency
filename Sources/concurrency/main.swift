@@ -176,153 +176,155 @@ func taskCancellation() {
   task.cancel()
 }
 
-enum RequestData {
-  @TaskLocal static var requestId: UUID!
-  @TaskLocal static var startDate: Date!
-}
-
-func databaseQuery() async throws {
-  let requestId = RequestData.requestId!
-  print(requestId, "Making database query")
-  try await Task.sleep(nanoseconds: 500_000_000)
-  print(requestId, "Finished database query")
-}
-
-func networkRequest() async throws {
-  let requestId = RequestData.requestId!
-  print(requestId, "Making network request")
-  try await Task.sleep(nanoseconds: 500_000_000)
-  print(requestId, "Finished network request")
-}
-
-// now we can improve on how we approach this in the past
-// and mark this function as async.
-// this move the responsibility of creating an asynchronous and failable context to the caller of the function.
-func response(for request: URLRequest) async throws -> HTTPURLResponse {
-  let requestId = RequestData.requestId!
-  let start = RequestData.startDate!
-  
-  defer { print(requestId, "Request finished in", Date().timeIntervalSince(start)) }
-  
-  // assuming we want to track analytics data with a fire and forget operation.
-  // this also have access to the requestId.
-  Task {
-    print(RequestData.requestId!, "Track analytics")
+func taskStorageAndCooperation() {
+  enum RequestData {
+    @TaskLocal static var requestId: UUID!
+    @TaskLocal static var startDate: Date!
   }
-  // even deeper in these async contexts, we still have access to the requestId
-  try await databaseQuery()
-  try await networkRequest()
-//  print(requestId, "Making database query")
-//  try await Task.sleep(nanoseconds: 500_000_000)
-//  print(requestId, "Finished database query")
-//  print(requestId, "Making network request")
-//  try await Task.sleep(nanoseconds: 500_000_000)
-//  print(requestId, "Finished network request")
   
-  // TODO: do some work to actually generate a response
-  return .init()
-}
-
-//RequestData.$requestId.withValue(UUID()) {
-//  RequestData.$startDate.withValue(Date()) {
-//    Task {
-//      _ = try await response(for: .init(url: .init(string: "https://www.pointfree.co")!))
-//    }
-//  }
-//}
-
-// this namespacing can also be used to house other Task locals we might want to use throughout the application.
-// Alternatively you could also define a single struct to hold all of these values and then have a single @TaskLocal.
-//enum MyLocals {
+  func databaseQuery() async throws {
+    let requestId = RequestData.requestId!
+    print(requestId, "Making database query")
+    try await Task.sleep(nanoseconds: 500_000_000)
+    print(requestId, "Finished database query")
+  }
+  
+  func networkRequest() async throws {
+    let requestId = RequestData.requestId!
+    print(requestId, "Making network request")
+    try await Task.sleep(nanoseconds: 500_000_000)
+    print(requestId, "Finished network request")
+  }
+  
+  // now we can improve on how we approach this in the past
+  // and mark this function as async.
+  // this move the responsibility of creating an asynchronous and failable context to the caller of the function.
+  func response(for request: URLRequest) async throws -> HTTPURLResponse {
+    let requestId = RequestData.requestId!
+    let start = RequestData.startDate!
+    
+    defer { print(requestId, "Request finished in", Date().timeIntervalSince(start)) }
+    
+    // assuming we want to track analytics data with a fire and forget operation.
+    // this also have access to the requestId.
+    Task {
+      print(RequestData.requestId!, "Track analytics")
+    }
+    // even deeper in these async contexts, we still have access to the requestId
+    try await databaseQuery()
+    try await networkRequest()
+    //  print(requestId, "Making database query")
+    //  try await Task.sleep(nanoseconds: 500_000_000)
+    //  print(requestId, "Finished database query")
+    //  print(requestId, "Making network request")
+    //  try await Task.sleep(nanoseconds: 500_000_000)
+    //  print(requestId, "Finished network request")
+    
+    // TODO: do some work to actually generate a response
+    return .init()
+  }
+  
+  //RequestData.$requestId.withValue(UUID()) {
+  //  RequestData.$startDate.withValue(Date()) {
+  //    Task {
+  //      _ = try await response(for: .init(url: .init(string: "https://www.pointfree.co")!))
+  //    }
+  //  }
+  //}
+  
+  // this namespacing can also be used to house other Task locals we might want to use throughout the application.
+  // Alternatively you could also define a single struct to hold all of these values and then have a single @TaskLocal.
+  //enum MyLocals {
   // we're using implicitly uwrapped optional here so that it louds a failure whenever you access an uninitialized task local.
-//  @TaskLocal static var id: Int!
+  //  @TaskLocal static var id: Int!
   
   // Other Task locals
   // @TaskLocal var api: APIClient
   // @TaskLocal var database: DatabaseClient
   // @TaskLocal var stripe: StripeClient
-//}
-
-//func doSomething() async {
-//  print("doSomething:", MyLocals.id!)
-//}
-
-// print("before:", MyLocals.id) // this prints nil if not initialized
-// to initialize it we use a method on the property wrapper:
-//MyLocals.$id.withValue(42) {
-//  print("withValue:", MyLocals.id!) // 42
+  //}
+  
+  //func doSomething() async {
+  //  print("doSomething:", MyLocals.id!)
+  //}
+  
+  // print("before:", MyLocals.id) // this prints nil if not initialized
+  // to initialize it we use a method on the property wrapper:
+  //MyLocals.$id.withValue(42) {
+  //  print("withValue:", MyLocals.id!) // 42
   
   // how to retain the local much longer
-//  Task {
-    // print("Task:", MyLocals.id!) // prints 42 even though the Task's closure has escaped from the operation closure we're using in withValue: it executed after the local went nil.
-//  }
+  //  Task {
+  // print("Task:", MyLocals.id!) // prints 42 even though the Task's closure has escaped from the operation closure we're using in withValue: it executed after the local went nil.
+  //  }
   
-//  Task {
-//    MyLocals.$id.withValue(1729) {
-      // spin off another Task that inherits those locals
-//      Task {
-//        try await Task.sleep(nanoseconds: 2 * NSEC_PER_SEC)
-//        print("Task 2:", MyLocals.id!)
-//      }
-//    }
-    
-//    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
-//    Task {
-      // this still prints 42. this is because the moment we create a task,
-      // it captures all the Task's local
-//      print("Task:", MyLocals.id!) // still printed 42
-//      await doSomething()
-//    }
-//  }
-//}
-// print("after:", MyLocals.id) // nil
-
-//for _ in 0..<workcount {
-//  Thread.detachNewThread {
-//    while true { } // simulate something intense
-//  }
-//}
-
-// without all the thread contention above, it takes about 0.089sec to run.
-// this shows how in Threads two many threads are created that contends with this one for resources.
-// all these thread contention can hurt the performance of other threads that need to do their job
-//Thread.detachNewThread {
-//  print("Starting prime thread") // takes a long time to get the prime
-//  nthPrime(50_000)
-//}
-
-//for n in 0..<workcount {
-//  Task {
-    // all the concurrent cooperative thread are just blocked in this while loop.
-    // this looks like a step back for wanting to write code that executes simultaneously.
-    // to solve this we should use non-blocking APIs for asynchronous work
-    // while true { } // simulate something intense
-    
-    // non-blocking asynchronous work done by URLSession.
-    // assuming we want to load 1,000 1MB files.
-    // running this: notice that our nthPrime Task immediately returns a response.
-//    let (data, _) = try await URLSession.shared.data(from: .init(string: "https://ipv4.download.thinkbroadband.com/1MB.zip")!)
-//    print(n, Thread.current)
-//  }
-//}
-
-// if we can't use Task.sleep or any of those Apple's non-blocking asynchronous APIs,
-// we can use `yield` to give up some resources so that other Tasks can use.
-for _ in 0..<workcount {
-  Task {
-    // simulate something intense
-    // with yield the nthPrime task runs immediately 
-    while true {
-      await Task.yield() // we're creating a suspension point so that other tasks will get a turn on this thread.
-      // at at some later time, when the runtime has felt it has giving enough time to other tasks it will resume us.
-      // this is an important tool for cooperation.
+  //  Task {
+  //    MyLocals.$id.withValue(1729) {
+  // spin off another Task that inherits those locals
+  //      Task {
+  //        try await Task.sleep(nanoseconds: 2 * NSEC_PER_SEC)
+  //        print("Task 2:", MyLocals.id!)
+  //      }
+  //    }
+  
+  //    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+  //    Task {
+  // this still prints 42. this is because the moment we create a task,
+  // it captures all the Task's local
+  //      print("Task:", MyLocals.id!) // still printed 42
+  //      await doSomething()
+  //    }
+  //  }
+  //}
+  // print("after:", MyLocals.id) // nil
+  
+  //for _ in 0..<workcount {
+  //  Thread.detachNewThread {
+  //    while true { } // simulate something intense
+  //  }
+  //}
+  
+  // without all the thread contention above, it takes about 0.089sec to run.
+  // this shows how in Threads two many threads are created that contends with this one for resources.
+  // all these thread contention can hurt the performance of other threads that need to do their job
+  //Thread.detachNewThread {
+  //  print("Starting prime thread") // takes a long time to get the prime
+  //  nthPrime(50_000)
+  //}
+  
+  //for n in 0..<workcount {
+  //  Task {
+  // all the concurrent cooperative thread are just blocked in this while loop.
+  // this looks like a step back for wanting to write code that executes simultaneously.
+  // to solve this we should use non-blocking APIs for asynchronous work
+  // while true { } // simulate something intense
+  
+  // non-blocking asynchronous work done by URLSession.
+  // assuming we want to load 1,000 1MB files.
+  // running this: notice that our nthPrime Task immediately returns a response.
+  //    let (data, _) = try await URLSession.shared.data(from: .init(string: "https://ipv4.download.thinkbroadband.com/1MB.zip")!)
+  //    print(n, Thread.current)
+  //  }
+  //}
+  
+  // if we can't use Task.sleep or any of those Apple's non-blocking asynchronous APIs,
+  // we can use `yield` to give up some resources so that other Tasks can use.
+  for _ in 0..<workcount {
+    Task {
+      // simulate something intense
+      // with yield the nthPrime task runs immediately
+      while true {
+        await Task.yield() // we're creating a suspension point so that other tasks will get a turn on this thread.
+        // at at some later time, when the runtime has felt it has giving enough time to other tasks it will resume us.
+        // this is an important tool for cooperation.
+      }
     }
   }
-}
-
-Task {
-  print("Starting prime thread") // seems this task isn't even getting a chance to start.
-  nthPrime(50_000)
+  
+  Task {
+    print("Starting prime thread") // seems this task isn't even getting a chance to start.
+    nthPrime(50_000)
+  }
 }
 
 
