@@ -10,7 +10,12 @@ let package = Package(
   targets: [
     .executableTarget(
       name: "concurrency",
-      dependencies: []
+      dependencies: [],
+      swiftSettings: [
+        .unsafeFlags([
+          "-Xfrontend", "-warn-concurrency",
+        ]),
+      ]
     ),
     .testTarget(
       name: "concurrencyTests",

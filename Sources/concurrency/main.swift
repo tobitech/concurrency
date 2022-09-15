@@ -414,15 +414,36 @@ let counter = Counter()
 //}
 
 // Even if count is a mutable `var`, if we explicity capture the count when we spin up the Task
+//func doSomething() {
+//  var count = 0 // was previously declared with var
+//  Task { [count] in
+//    // this captured count is untethered to the variable outside.
+//    print(count) // No compiler error, because we are only grabbing an immutable copy of the variable at the moment of creating the Task.
+//  }
+//
+//  Thread.sleep(forTimeInterval: 1)
+//  print(count)
+//}
+
+// There are more ways the compiler can help us find these kinds of race conditions.
+// Currently these tools are gated behind a Swift flag (as of this tutorial 15/09/2022).
+// We can hop into those diagnostics in our package, by adding a flag to our swiftsetting that enables the concurrency warning.
+// Now we should get a warning even on the previous approach.
+// This warning will be an error in the future.
 func doSomething() {
-  var count = 0 // was previously declared with var
-  Task { [count] in
-    // this captured count is untethered to the variable outside.
-    print(count) // No compiler error, because we are only grabbing an immutable copy of the variable at the moment of creating the Task.
+  for _ in 0..<workcount {
+    Task {
+      counter.increment() // ⚠️ Capture of ‘counter’ with non-sendable type ‘Counter’ in a @Sendable closure
+    }
   }
   
-  Thread.sleep(forTimeInterval: 1)
-  print(count)
+  Thread.sleep(forTimeInterval: 2)
+  print("counter.count", counter.count)
+  
+  var count = 0
+  Task { [count] in
+    print(count)
+  }
 }
 
 doSomething()
