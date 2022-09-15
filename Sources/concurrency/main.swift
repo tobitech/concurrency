@@ -480,23 +480,66 @@ let counter = Counter()
 
 // So we can largely stay in the sendable world as long as we are creating simple value types that are composed of other sendable value types.
 // But, as our data types grow more complex we may accidentally fall out of the purview of automatic sendable conformance. For example, suppose we did something seemingly innocuous like adding an attributed string to our model for the bio of the user:
+//func doSomething() {
+//
+//  // AttributedString is not Sendable yet (as at this date 15/09/2022)
+//  struct User: Sendable {
+//    var id: Int
+//    var name: String
+//    // we get localised warning when we explicitly conform User to Sendable.
+//    // var bio: AttributedString // ⚠️ Stored property 'bio' of 'Sendable'-conforming struct 'User' has non-sendable type 'AttributedString'
+//  }
+//  // let user = User(id: 42, name: "Blob", bio: "")
+//  let user = User(id: 42, name: "Blob")
+//  Task {
+//    // the warning shows because we can no longer prove to the compiler that it's safe to send `User` across concurrent boundaries.
+//    print(user) // ⚠️ Capture of ‘user’ with non-sendable type ‘User’ in a @Sendable closure
+//  }
+//}
+
+// Reference types can also be made Sendable.
+// We get some warnings when we conform a class to Sendable.
+// It seems reference types cannot automatically conform even if they hold on two simple value type fields.
+// We have to mark it as final, because another subclass of the class can introduce some non-sendable things, such as introducing mutable state. That removes the first warning.
+// Change `var` to let to address the second warning.
+// Now we get rid of all the warnings. Although we now have limited capabilities since the class can no longer change its internal states at all which makes it behave similar to the struct version we had, but that's the cost of doing business with multithreaded code
 func doSomething() {
-  
-  // AttributedString is not Sendable yet (as at this date 15/09/2022)
-  struct User: Sendable {
-    var id: Int
-    var name: String
-    // we get localised warning when we explicitly conform User to Sendable.
-    // var bio: AttributedString // ⚠️ Stored property 'bio' of 'Sendable'-conforming struct 'User' has non-sendable type 'AttributedString'
+  // class User: Sendable { // ⚠️ Non-final class 'User' cannot conform to 'Sendable'; use '@unchecked Sendable'
+  final class User: Sendable {
+    // var id: Int // ⚠️ Stored property 'id' of 'Sendable'-conforming class 'User' is mutable
+    // var name: String // ⚠️ Stored property 'id' of 'Sendable'-conforming class 'User' is mutable
+    let id: Int
+    let name: String
+    
+    init(id: Int, name: String) {
+      self.id = id
+      self.name = name
+    }
   }
-  // let user = User(id: 42, name: "Blob", bio: "")
   let user = User(id: 42, name: "Blob")
   Task {
-    // the warning shows because we can no longer prove to the compiler that it's safe to send `User` across concurrent boundaries.
-    print(user) // ⚠️ Capture of ‘user’ with non-sendable type ‘User’ in a @Sendable closure
+    print(user)
   }
 }
 
-// Reference types can also be made Sendable.
+// The Swift compiler doesn't know we've added some work to make it safe to work with in asychronous contexts.
+// that's why when we mark this as Sendable, we still get those warnings.
+// ⚠️ Non-final class 'Counter' cannot conform to 'Sendable'; use '@unchecked Sendable'
+// ⚠️ Stored property 'lock' of 'Sendable'-conforming class 'Counter' has non-sendable type 'NSLock'
+// ⚠️ Stored property 'count' of 'Sendable'-conforming class 'Counter' is mutable
+// We can't make NSLock Sendable, and we don't want to make count field let.
+// But since we're sure we've done some work to make it safe we can use @unchecked Sendable to get rid of the warning.
+// So we should know that anytime we use @unchecked Sendable, we are operating totally outside of the pureview of the compiler.
+// It's actually possible that in the future we introduce changes to state that makes it no longer safe to pass across concurrent boundaries and swift will not be able to detect that.
+//class Counter: Sendable {
+//class Counter: @unchecked Sendable {
+//  let lock = NSLock()
+//  var count: Int = 0
+//  func increment() {
+//    self.lock.lock()
+//    defer { self.lock.unlock() }
+//    self.count += 1
+//  }
+//}
 
 Thread.sleep(forTimeInterval: 5)
