@@ -339,13 +339,92 @@ class Counter {
 
 let counter = Counter()
 
-for _ in 0..<workcount {
-  Task {
-    counter.increment()
+//for _ in 0..<workcount {
+//  Task {
+//    counter.increment()
+//  }
+//}
+//
+//Thread.sleep(forTimeInterval: 2)
+//print("counter.count", counter.count)
+
+// Swift prohibits capturing mutable variables inside asynchronous contexts
+//func doSomething() {
+//  var count = 0
+//  Task {
+//    // 🛑 Reference to captured var 'count' in concurrently-executing code
+//    print(count)
+//  }
+//}
+
+// Some questions on why the prohibition is a good thing.
+// Q1: If you capture an outside variable in the Task, should mutable on the outside be visible on the inside?
+// What if after the Task, we change the value of the count
+// and then in the Task we slept for a second, what should count be in the Task?
+// should it be 0? or 1?
+//func doSomething() {
+//  var count = 0
+//  Task {
+//    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//    print(count) // 0? 1? // 🛑
+//  }
+//  count = 1
+//}
+
+// Q2: What if we could mutate the count inside of the Task and then we slept the Thread for a second before print the count.
+// What should the count be, 0? or 1?
+//func doSomething() {
+//  var count = 0
+//  Task {
+//    count = 1 // 🛑
+//  }
+//  Thread.sleep(forTimeInterval: 1)
+//  print(count) // 0? 1?
+//}
+
+// Both of these questions are confusing, since they do not read linearly from top to bottom. If we allow mutable captures we open ourselves up to race conditions.
+// Mutable captures like these are allowed in merely escaping closures, meaning it's possible to introduce a race condition without the compiler saying a peep.
+// This shows how tricky multithreading programming can be. we have a code that appears to work but then it can do something unexpected.
+// So outlawing mutable captures in concurrent contexts make it so that we don't even have to answer these questions.
+//func doSomething() {
+//  var count = 0
+//
+//  for _ in 0..<workcount {
+//    // `detachNewThread` takes an escaping closure.
+//    Thread.detachNewThread {
+//      // we're allowing each thread to try and increment the count.
+//      count += 1 // No compiler warning
+//    }
+//  }
+//
+//  Thread.sleep(forTimeInterval: 1)
+//  print(count) // 999 it's even closer because it's a local variable rather than when we tried to access the count inside a Counter class.
+//}
+
+// Although mutable captures are not allowed, immutable captures are just fine
+//func doSomething() {
+//  let count = 0 // was previously declared with var
+//  Task {
+    // no risk of race conditions in this code cause Swift knows it's immutable
+//    print(count) // No compiler error, because we declared variable with let
+//  }
+  
+//  Thread.sleep(forTimeInterval: 1)
+//  print(count)
+//}
+
+// Even if count is a mutable `var`, if we explicity capture the count when we spin up the Task
+func doSomething() {
+  var count = 0 // was previously declared with var
+  Task { [count] in
+    // this captured count is untethered to the variable outside.
+    print(count) // No compiler error, because we are only grabbing an immutable copy of the variable at the moment of creating the Task.
   }
+  
+  Thread.sleep(forTimeInterval: 1)
+  print(count)
 }
 
-Thread.sleep(forTimeInterval: 2)
-print("counter.count", counter.count)
+doSomething()
 
 Thread.sleep(forTimeInterval: 5)
