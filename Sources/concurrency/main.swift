@@ -722,5 +722,183 @@ func doSomething() {
 //}
 
 // The @Sendable attribute is very similar, except instead of protecting you from passing unsafe closures to asynchronous contexts it protects you from passing unsafe closures to concurrent contexts.
+// So, let’s see what kind of new problems can crop up when dealing with concurrent code, and see what the compiler has to say about it.
+
+// What if we wanted to run each unit of work() concurrently rather than serially, one after the other. using a Task {}
+// the moment we do that we get some warnings and some errors.
+// 🛑 Escaping closure captures non-escaping parameter 'work'. This is because the closure to initialize a Task {} is escaping and our work isn't.
+// so we can mark it as escaping to remove that error.
+// ⚠️ Capture of 'work' with non-sendable type '() -> Void' in a `@Sendable` closure. this is because we're using work that is not @Sendable inside a context that is @Sendable.
+// remember the init function of Task is like this.
+// public init(priority: TaskPriority? = nil, operation: @escaping @Sendable () async throws -> Success)
+// in Swift 6 this warning will become an error.
+
+//func perform(work: () -> Void) async throws {
+//func perform(work: @escaping () -> Void) async throws {
+//  print("begin")
+//  Task.init { // 🛑 Escaping closure captures non-escaping parameter 'work'
+//    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//    work() // ⚠️ Capture of 'work' with non-sendable type '() -> Void' in a `@Sendable` closure
+//  }
+//
+//  Task {
+//    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//    work()
+//  }
+//
+//  Task {
+//    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//    work()
+//  }
+//  print("end")
+//}
+//
+//Task {
+//  try await perform {
+//    print("hello")
+//  }
+//}
+
+// To see why this warning is a good thing, and why we would even want it to be an error someday in the future, let’s see what kind of seemingly reasonable code we can write that turns out to be completely unreasonable.
+// Let's explore some things assuming there are no warnings.
+// Remove async throws, since we're not doing any asynchronous work inside but rather doing concurrent work with Tasks.
+// func perform(work: @escaping () -> Void) async throws {
+//func perform(work: @escaping () -> Void) {
+//  Task.init { // 🛑 Escaping closure captures non-escaping parameter 'work'
+//    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//    work() // ⚠️ Capture of 'work' with non-sendable type '() -> Void' in a `@Sendable` closure
+//  }
+//
+//  Task {
+//    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//    work()
+//  }
+//
+//  Task {
+//    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//    work()
+//  }
+//}
+
+// Let's do something here that's still friendly to @escaping but not friendly to @Sendable.
+// However this code is not safe at all and will lead to some surprising results if we allow it.
+//Task {
+//  var count = 0
+//  perform {
+//    print("hello")
+//    count += 1
+//  }
+//}
+// Say we repeat this code a thousand times.
+// We got 2972 instead of 3000 because the code has race conditions.
+// There's nothing about perform that lets us know that concurrent things are going to be happening on the inside.
+// So, without the compiler knowing about code that is safe to run concurrently, it is possible to write seemingly reasonable code that is completely wrong.
+//Task {
+//  var count = 0
+//  for _ in 0..<workcount {
+//    perform {
+//      count += 1
+//    }
+//  }
+//  try await Task.sleep(nanoseconds: NSEC_PER_SEC * 2)
+//  print(count) // 2972 - we expected 3000.
+//}
+
+// Let's see what happens when we add the @Sendable attribute.
+// Now all the warning go away, because we've told the compiler that only Sendable closures are allowed to be passed in, so we're allowed to fire off as many tasks as we want and invoke the work, because work() is safe to do concurrently
+// The code below it now throws an error // 🛑 Mutation of captured var 'count' in concurrently-executing code because it's no longer safe to concurrenly capture and mutate a variable.
+// Swift now knows enough about the intended use of the closure that it's going to be used in asynchronous and concurrent manner so it can just outlaw certain types of closures from being able to perform.
+//func perform(work: @escaping @Sendable () -> Void) {
+//  Task.init {
+//    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//    work()
+//  }
+//
+//  Task {
+//    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//    work()
+//  }
+//
+//  Task {
+//    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//    work()
+//  }
+//}
+//
+//Task {
+//  var count = 0
+//  for _ in 0..<workcount {
+//    // we're no longer allowed to capture mutable variables from the outside, even though this was a safe thing to do with escaping closures.
+//    // we can now only do concurrent friendly things inside here.
+//    perform {
+//      // count += 1 // 🛑 Mutation of captured var 'count' in concurrently-executing code
+//      print("hello")
+//    }
+//  }
+//  try await Task.sleep(nanoseconds: NSEC_PER_SEC * 2)
+//  print(count)
+//}
+
+// You can also use @Sendable to help make types that hold onto closures conform to the Sendable protocol.
+// For example, suppose we were designing a lightweight dependency that abstracts over access to a database.
+// If we follow the design we’ve discussed many types on Point-Free we might end up with a struct that has a few endpoints for performing database operations:
+struct User {}
+
+// unfortunately this type is not Sendable and cannot be used across concurrent boundaries.
+//struct DatabaseClient {
+// Let's try to make it sendable. We get some warnings on the closures inside of it. // ⚠️ Stored property 'fetchUsers' of 'Sendable'-conforming struct 'DatabaseClient' has non-sendable type '() async throws -> [User]' because the compiler doesn't know what type of closures they are - they could be reading and writing mutable variables which is not safe.
+// So we can mark them as Sendable to only allow Sendable closures to be passed in.
+// and that will restrict the kind of closures that we could use when constructing a database client.
+// struct DatabaseClient: Sendable {
+struct DatabaseClient { // we can even get rid of : Sendable conformance on the type and it will be inferred automatically.
+  // var fetchUsers: () async throws -> [User]
+  // var createUser: (User) async throws -> Void
+  var fetchUsers: @Sendable () async throws -> [User]
+  var createUser: @Sendable (User) async throws -> Void
+}
+
+extension DatabaseClient {
+  static let live = Self(
+    fetchUsers: { fatalError() },
+    createUser: { _ in fatalError() }
+  )
+}
+
+// let's say the perform function needed the DatabaseClient dependency
+// we now get some warnings ⚠️ Capture of 'client' with non-sendable type 'DatabaseClient' in a `@Sendable` closure
+func perform(
+  client: DatabaseClient,
+  work: @escaping @Sendable () -> Void
+) {
+  Task.init {
+    _ = try await client.fetchUsers() // ⚠️ Capture of 'client' with non-sendable type 'DatabaseClient' in a `@Sendable` closure
+    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+    work()
+  }
+  
+  Task {
+    _ = try await client.fetchUsers()
+    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+    work()
+  }
+  
+  Task {
+    _ = try await client.fetchUsers()
+    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+    work()
+  }
+}
+
+Task {
+  var count = 0
+  for _ in 0..<workcount {
+    perform(client: .live) {
+      print("hello")
+    }
+  }
+  try await Task.sleep(nanoseconds: NSEC_PER_SEC * 2)
+  print(count)
+}
+
 
 Thread.sleep(forTimeInterval: 5)
