@@ -327,5 +327,25 @@ func taskStorageAndCooperation() {
   }
 }
 
+class Counter {
+  let lock = NSLock()
+  var count: Int = 0
+  func increment() {
+    self.lock.lock()
+    defer { self.lock.unlock() }
+    self.count += 1
+  }
+}
+
+let counter = Counter()
+
+for _ in 0..<workcount {
+  Task {
+    counter.increment()
+  }
+}
+
+Thread.sleep(forTimeInterval: 2)
+print("counter.count", counter.count)
 
 Thread.sleep(forTimeInterval: 5)
