@@ -544,23 +544,23 @@ func taskStorageAndCooperation() {
 //}
 
 // Let's explore @Sendable attribute to closures.
-class Counter {
-  let lock = NSLock()
-  var count: Int = 0
-  func increment() {
-    self.lock.lock()
-    defer { self.lock.unlock() }
-    self.count += 1
-  }
-}
-
-func doSomething() {
-  let counter = Counter()
-  
-  Task {
-    counter.increment() // ⚠️ Capture of 'counter' with non-sendable type 'Counter' in a `@Sendable` closure
-  }
-}
+//class Counter {
+//  let lock = NSLock()
+//  var count: Int = 0
+//  func increment() {
+//    self.lock.lock()
+//    defer { self.lock.unlock() }
+//    self.count += 1
+//  }
+//}
+//
+//func doSomething() {
+//  let counter = Counter()
+//
+//  Task {
+//    counter.increment() // ⚠️ Capture of 'counter' with non-sendable type 'Counter' in a `@Sendable` closure
+//  }
+//}
 
 // Refresher on @escaping
 // It restricts how you're allowed to use a closure that is passed to a function
@@ -842,7 +842,7 @@ func doSomething() {
 // You can also use @Sendable to help make types that hold onto closures conform to the Sendable protocol.
 // For example, suppose we were designing a lightweight dependency that abstracts over access to a database.
 // If we follow the design we’ve discussed many types on Point-Free we might end up with a struct that has a few endpoints for performing database operations:
-struct User {}
+//struct User {}
 
 // unfortunately this type is not Sendable and cannot be used across concurrent boundaries.
 //struct DatabaseClient {
@@ -850,55 +850,161 @@ struct User {}
 // So we can mark them as Sendable to only allow Sendable closures to be passed in.
 // and that will restrict the kind of closures that we could use when constructing a database client.
 // struct DatabaseClient: Sendable {
-struct DatabaseClient { // we can even get rid of : Sendable conformance on the type and it will be inferred automatically.
+//struct DatabaseClient { // we can even get rid of : Sendable conformance on the type and it will be inferred automatically.
   // var fetchUsers: () async throws -> [User]
   // var createUser: (User) async throws -> Void
-  var fetchUsers: @Sendable () async throws -> [User]
-  var createUser: @Sendable (User) async throws -> Void
-}
-
-extension DatabaseClient {
-  static let live = Self(
-    fetchUsers: { fatalError() },
-    createUser: { _ in fatalError() }
-  )
-}
+//  var fetchUsers: @Sendable () async throws -> [User]
+//  var createUser: @Sendable (User) async throws -> Void
+//}
+//
+//extension DatabaseClient {
+//  static let live = Self(
+//    fetchUsers: { fatalError() },
+//    createUser: { _ in fatalError() }
+//  )
+//}
 
 // let's say the perform function needed the DatabaseClient dependency
 // we now get some warnings ⚠️ Capture of 'client' with non-sendable type 'DatabaseClient' in a `@Sendable` closure
-func perform(
-  client: DatabaseClient,
-  work: @escaping @Sendable () -> Void
-) {
-  Task.init {
-    _ = try await client.fetchUsers() // ⚠️ Capture of 'client' with non-sendable type 'DatabaseClient' in a `@Sendable` closure
-    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
-    work()
+//func perform(
+//  client: DatabaseClient,
+//  work: @escaping @Sendable () -> Void
+//) {
+//  Task.init {
+//    _ = try await client.fetchUsers() // ⚠️ Capture of 'client' with non-sendable type 'DatabaseClient' in a `@Sendable` closure
+//    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//    work()
+//  }
+//
+//  Task {
+//    _ = try await client.fetchUsers()
+//    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//    work()
+//  }
+//
+//  Task {
+//    _ = try await client.fetchUsers()
+//    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//    work()
+//  }
+//}
+
+//Task {
+//  var count = 0
+//  for _ in 0..<workcount {
+//    perform(client: .live) {
+//      print("hello")
+//    }
+//  }
+//  try await Task.sleep(nanoseconds: NSEC_PER_SEC * 2)
+//  print(count)
+//}
+
+// The use of @unchecked Sendable should be a huge red flag because we will be operating outside the pureview of the compiler.
+// Sometimes it's necessary to use this attribute like when interfacing with old code but at the end of the day you are just telling the compiler to trust us that everything is kosher
+// We will add a decrement() endpoint, and a max field to hold on to the maximum value the counter has ever held.
+// We will also make the class unsafe to pass across concurrent boundaries by changing how we lock the increment to only affect the count up, removing the defer.
+// // this change is subtle but the compiler can't hold our hands that something bad has happened
+// This is why there is an entirely new kind of data type in Swift 5.5 that allows you to protect a piece of mutable state from these kinds of data races. And this data type is deeply ingrained into the language so that the compiler can know when you are using it in a way that could potentially lead to data races.
+class Counter: @unchecked Sendable {
+  let lock = NSLock()
+  var count: Int = 0
+  var maximum = 0
+
+  func increment() {
+    self.lock.lock()
+    // defer { self.lock.unlock() }
+    self.count += 1
+    self.lock.unlock()
+    self.maximum = max(self.count, self.maximum)
   }
-  
-  Task {
-    _ = try await client.fetchUsers()
-    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
-    work()
-  }
-  
-  Task {
-    _ = try await client.fetchUsers()
-    try await Task.sleep(nanoseconds: NSEC_PER_SEC)
-    work()
+
+  func decrement() {
+    self.lock.lock()
+    defer { self.lock.unlock() }
+    self.count -= 1
   }
 }
+
+func doSomething() {
+  let counter = Counter()
+  
+  Task {
+    counter.increment()
+  }
+}
+
+// actor is an entirely new kind of data type in Swift 5.5 that allows you to protect a piece of mutable state from these kinds of data races. And this data type is deeply ingrained into the language so that the compiler can know when you are using it in a way that could potentially lead to data races.
+// Structs and enums are Swift’s tools for modeling value types that represent holding multiple data types at once or holding a single choice from multiple data types.
+// Reference types represent data that has identity and can be passed around by reference.
+// And actors are also reference types, but that further synchronize access to its data and methods.
+// so we can implement this actor much like how we first implemented the Counter class.
+// This is exactly how we wanted to implement the Counter class but quickly found out that there was the potential for data races when invoking the increment method.
+// Notice that we don’t have any locks or dispatch queues, and we don’t need to maintain a private underscored piece of mutable state just so that we can lock access to it in a computed property. We also don’t have to worry about setting the maximum value outside the lock because the entire method is synchronized. Overall this type is much simpler than the class-based counter type.
+actor CounterActor {
+  var count = 0
+  var maximum = 0
+  func increment() {
+    self.count += 1
+    // self.maximum = max(self.count, self.maximum)
+    // let's try moving setting maximum to another method.
+    // we didn't have to await this. which means working within an actor can be quite simple and ergonomic.
+    // it's only when the outside world needs to deal with the actor that we have to worry about working in an asynchronous context.
+    self.computeMaximum()
+  }
+  
+  func decrement() {
+    self.count -= 1
+  }
+  
+  private func computeMaximum() {
+    self.maximum = max(self.count, self.maximum)
+  }
+}
+
+let counter = CounterActor()
+
+//for _ in 0..<workcount {
+//  Thread.detachNewThread {
+    // this is example of Swift helping us to not do something that can lead to data races.
+    // we are not allowed to call actor methods from any context because the point of actor is to protect the data it holds.
+    // you can only invoke the increment() method if you're in an asynchronous context, because we don't want to lock any thread, which can be distrastrous.
+    // counter.increment() // 🛑 Actor-isolated instance method 'increment()' can not be referenced from a non-isolated context.
+//  }
+//}
+
+// so instead of detaching a new Thread, we will spin off a Task
+// It may seem strange that we have to await invoking the increment method, especially since the method is not even declared as async:
+// As far as the actor is concerned the method is perfectly synchronous. It can make any changes it wants to its mutable state without worrying about other threads because actors fully synchronize its data and methods.
+// But as far as the outside world is concerned, this method cannot be called synchronously because there may be multiple tasks trying to invoke the increment method at once. The actor needs to do the extra work in order to synchronize access. The way the actor can do this efficiently is by operating in an asynchronous context.
+// for _ in 0..<workcount {
+for _ in 0..<workcount { // we could even run it on larger work count.
+  Task {
+    // to show that we're not exploding the number of threads
+    // print("increment", Thread.current)
+    await counter.increment() // should prints 10,000 without the decrement Task below.
+  }
+  // let's see what happens by running the same amount of work to decrement.
+  Task {
+    // print("decrement", Thread.current)
+    await counter.decrement() // should now prints 0 with the introduction of this.
+  }
+}
+
+Thread.sleep(forTimeInterval: 1)
+// even accessing the property outside an asynchronous context is not allowed.
+// This is because it’s possible to try reading the count while another task is in the middle of updating it, which could lead us to getting an out-of-date value.
+// print("counter.count", counter.count) // 🛑 Actor-isolated property ‘count’ can not be referenced from a non-isolated context
 
 Task {
-  var count = 0
-  for _ in 0..<workcount {
-    perform(client: .live) {
-      print("hello")
-    }
-  }
-  try await Task.sleep(nanoseconds: NSEC_PER_SEC * 2)
-  print(count)
+  await print("counter.count", counter.count)
+  // does this means we've introduced a race condition in our code and that the actor isn't protecting us?
+  // the answer is no, there is no race condition, it's just an example of something that is non-deterministic by it very nature.
+  // We have 1,000 increment tasks and 1,000 decrement tasks running concurrently, and the order that they run is not going to be deterministic. Sometimes we may get a long stretch of consecutive increment tasks running, allowing the max to get a little high, and other times it may be more balanced of alternating incrementing and decrementing tasks. There really is no way to know, and that’s why this value can change.
+  // This is yet another example of how difficult multithreaded programming can be. Just because we have extremely powerful tools for preventing data races doesn’t mean we have removed the possibilities of non-determinism creeping into our code.
+  // If we don’t want that kind of non-determinism then we shouldn’t be performing concurrently.
+  // The issue of data races is completely seperate from non-determinism and Swift tools are tuned to address data races not non-determinism.
+  await print("counter.maximum", counter.maximum) // we get 8 // then 6
 }
-
 
 Thread.sleep(forTimeInterval: 5)
