@@ -430,22 +430,73 @@ let counter = Counter()
 // We can hop into those diagnostics in our package, by adding a flag to our swiftsetting that enables the concurrency warning.
 // Now we should get a warning even on the previous approach.
 // This warning will be an error in the future.
+//func doSomething() {
+//  for _ in 0..<workcount {
+//    Task {
+//      counter.increment() // ⚠️ Capture of ‘counter’ with non-sendable type ‘Counter’ in a @Sendable closure
+//    }
+//  }
+//
+//  Thread.sleep(forTimeInterval: 2)
+//  print("counter.count", counter.count)
+//
+//  var count = 0
+//  Task { [count] in
+//    print(count)
+//  }
+//}
+
+// doSomething()
+
+// As we're seen before a class holding a piece of mutable state is not typically safe to pass through multiple closures running concurrently, you have to put in a little extra work to make it safe by using a lock internally.
+// On the other hand, some types are safe to pass between concurrent boundaries
+// These compiles without error because the `Int` type conforms to the Sendable protocol.
+// In face majority of the types in the standard library conform to Sendable simply because they're just value types. i.e. booleans, strings, arrays of Sendables, dictionaries of Sendables etc.
+//  var count = 0
+//  Task { [count] in
+//    print(count)
+//  }
+
+//  let count = 0
+//  Task {
+//    print(count)
+//  }
+
+// Any value type whose fields are Sendable also can be passed across concurrent boundaries.
+//func doSomething() {
+  
+  // even though we didn't explicitly mark the `User` type as being Sendable
+  // compiler magic automatically applies the conformance for us.
+  // we can also do it explitictly if we want, but it isn't necessary
+//  struct User { // : Sendable {
+//    var id: Int
+//    var name: String
+//  }
+//  let user = User(id: 42, name: "Blob")
+//  Task {
+//    print(user) // No compiler warning
+//  }
+//}
+
+// So we can largely stay in the sendable world as long as we are creating simple value types that are composed of other sendable value types.
+// But, as our data types grow more complex we may accidentally fall out of the purview of automatic sendable conformance. For example, suppose we did something seemingly innocuous like adding an attributed string to our model for the bio of the user:
 func doSomething() {
-  for _ in 0..<workcount {
-    Task {
-      counter.increment() // ⚠️ Capture of ‘counter’ with non-sendable type ‘Counter’ in a @Sendable closure
-    }
+  
+  // AttributedString is not Sendable yet (as at this date 15/09/2022)
+  struct User: Sendable {
+    var id: Int
+    var name: String
+    // we get localised warning when we explicitly conform User to Sendable.
+    // var bio: AttributedString // ⚠️ Stored property 'bio' of 'Sendable'-conforming struct 'User' has non-sendable type 'AttributedString'
   }
-  
-  Thread.sleep(forTimeInterval: 2)
-  print("counter.count", counter.count)
-  
-  var count = 0
-  Task { [count] in
-    print(count)
+  // let user = User(id: 42, name: "Blob", bio: "")
+  let user = User(id: 42, name: "Blob")
+  Task {
+    // the warning shows because we can no longer prove to the compiler that it's safe to send `User` across concurrent boundaries.
+    print(user) // ⚠️ Capture of ‘user’ with non-sendable type ‘User’ in a @Sendable closure
   }
 }
 
-doSomething()
+// Reference types can also be made Sendable.
 
 Thread.sleep(forTimeInterval: 5)
