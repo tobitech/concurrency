@@ -409,15 +409,15 @@ func response(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
 //7A86E90B-0B77-4936-BB56-6CCCC361441E Request finished in 0.5450379848480225
 
 // Now let's go back to cancelling
-RequestData.$requestId.withValue(UUID()) {
-	RequestData.$startDate.withValue(Date()) {
-		let task = Task {
-			_ = try await response(.init(url: .init(string: "https://www.pointfree.co")!))
-		}
-		Thread.sleep(forTimeInterval: 0.1)
-		task.cancel()
-	}
-}
+//RequestData.$requestId.withValue(UUID()) {
+//	RequestData.$startDate.withValue(Date()) {
+//		let task = Task {
+//			_ = try await response(.init(url: .init(string: "https://www.pointfree.co")!))
+//		}
+//		Thread.sleep(forTimeInterval: 0.1)
+//		task.cancel()
+//	}
+//}
 
 // Notice how `async let` plays well with cancellation.
 // We are performing concurrent work by fetching the user and subscription at the same time, and it’s not until we actually need to make use of it do we need to await. And even then we can just await a single time while both tasks run in parallel.
@@ -430,6 +430,140 @@ RequestData.$requestId.withValue(UUID()) {
 //028DD6A8-89B2-4A45-9AF4-EF51E515B228 Request finished in 0.10472500324249268
 
 
+
+// The async let construct works really well for when we need to run a statically known number of units of work in parallel and in a structured manner, but there’s another tool for dealing with an unknown number of units of work.
+// It's called `task group`.
+// it allows you to suspend while a dynamic number of tasks do their work and then resumes once all tasks are finished. You can even accumulate the output of each child task into a final output.
+
+// To give this a spin, suppose that we wanted to fire up 1,000 tasks that simulate some complex process for procuring an integer, and then we want to sum up those 1,000 integers.
+
+//Task {
+//	withTaskGroup(
+		// The first argument is a type of value that is returned from each child task the group spins up to do work
+//		of: <#T##Sendable.Protocol#>,
+		// the second argument is the type of value that will be ultimately returned from running the group of tasks, kind of like a reduce function
+//		returning: <#T##GroupResult.Type#>,
+		// the final argument is a closure where you actually do the work to add tasks to the group
+//		body: <#T##(inout TaskGroup<Sendable>) async -> GroupResult#>
+//	)
+//}
+
+// let's first see what this would look like in a world of just bare threads.
+//var sum = 0
+//for n in 1...1000 {
+//	Thread.detachNewThread {
+		// simulate doing some complex computation
+//		Thread.sleep(forTimeInterval: 1)
+		// then get the number for that index operation and add it to the sum.
+		// notice we already get a warning from the compiler. which means there will be race conditions.
+		// sum += n // ⚠️ Reference to var 'sum' is not concurrency-safe because it involves shared mutable state
+//	}
+//}
+
+// let's still prove it for ourselves despite the warning.
+// there is no easy way to wait for all of them to finish so we'll sleep for a while
+//Thread.sleep(forTimeInterval: 1.1)
+// we keep getting different number
+//print("sum", sum)
+
+// first run we got - sum 492625
+// running it again we get - sum 467955
+
+
+// With threads, we already know the code is not safe to run
+// we should have encapsulated the variable in a class and have some locking in place and expose method to mutate the variable but that is a lot of work to do.
+// Let's see what that looks like with task groups.
+func taskGroup() {
+	Task {
+		let sum = await withTaskGroup(
+			// the value each child task will return, for this example it's an Int
+			of: Int.self,
+			// once they are all complete, we will sum them together and return a sum from the task group
+			returning: Int.self,
+			// in this closure we will do the work to actually start adding tasks to the group
+			body: { group in
+				// we can add as many task as we want, this allows us do a dynamic number of tasks where as with async let we can only do a fixed number of tasks
+				for n in 1...1000 {
+					// all these child tasks will be run in parallel
+					group.addTask(operation: {
+						// in here we have an asynchronous context to do some asynchronous work and produce an integer
+						// we have to return an integer from here.
+						try? await Task.sleep(nanoseconds: NSEC_PER_SEC)
+						return n
+					})
+				}
+				// we can be notified when they all finish by awaiting
+				// this allows us to suspend until every task in the group finishes
+				// await group.waitForAll()
+				// even better we can iterate over all the output as the child tasks finish, we can be instantly notified when an integer has been produced and we can act upon it like sum it up.
+				// Remember that since the tasks are run in parallel there is no guarantee of the order they will emit, and this can be an important distinction. but in this example we don't care about the order.
+				var sum = 0
+				// the group here conforms to a protocol known as AsyncSequence, which is analogous to the Sequence protocol in Swift, except its next method is allowed to suspend in order to perform asynchronous work.
+				// this is what allows us to do `for await`
+				for await int in group {
+					sum += int
+				}
+				return sum
+			}
+		)
+		
+		// we get - sum 500500 every time we run this.
+		// no difference in value.
+		print("sum", sum)
+		// n*(n+1)/2, 1000*1001/2 = 500,500
+	}
+}
+
+// So this code works without any race conditions and we didn’t even have to introduce an actor in order to isolate access to shared mutable state.
+// Thanks to the way task group was designed we get the ability to accumulate the results of 1,000 tasks in a very simple manner.
+
+// We can even use a different method on group to completely bypass adding the task if it detects the parent task has already been cancelled:
+//Task {
+//	let sum = await withTaskGroup(
+//		of: Int.self,
+//		returning: Int.self,
+//		body: { group in
+//			for n in 1...1000 {
+//				group.addTaskUnlessCancelled(operation: {
+//					try? await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//					return n
+//				})
+//			}
+//			var sum = 0
+//			for await int in group {
+//				sum += int
+//			}
+//			return sum
+//		}
+//	)
+//
+//	print("sum", sum)
+//}
+
+// However, if you want cancellation to “just work” automatically like we have seen with throwing asynchronous units of work, then we have to switch to a throwing task group:
+// Now we can use try await instead of try? await we were using before to remove the compiler error of not being a a throwing context.
+// It now means if this Task is cancelled, it will trickle all the way down into the child tasks of the group causing the `try await Task.sleep()` to throw, causing the `withThrowingTaskGroup` scope to throw and then everything gets cancelled.
+Task {
+	let sum = try await withThrowingTaskGroup(
+		of: Int.self,
+		returning: Int.self,
+		body: { group in
+			for n in 1...1000 {
+				group.addTask(operation: {
+					try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+					return n
+				})
+			}
+			var sum = 0
+			for try await int in group {
+				sum += int
+			}
+			return sum
+		}
+	)
+
+	print("sum", sum)
+}
 
 
 
