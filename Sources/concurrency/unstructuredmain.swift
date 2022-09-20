@@ -235,5 +235,19 @@ actor Counter {
 }
 
 
+// Although using Swift’s concurrency tools largely prevents us from having to think about things like threads, there are still a few times it’s important.
+// Sometimes we need to interact with a system that requires access to be done on a particular thread or thread pool.
+// By far the most common example of this is interacting with anything UI related typically requires us to be on the main thread.
+// Let’s look at why this is surprisingly complicated when it comes to asynchrony in Swift, and see what tools Swift provides to fix the problem.
+//Task {
+//	let counter = Counter()
+//	for _ in 0..<workcount {
+//		await counter.decrement()
+//	}
+//	Thread.sleep(forTimeInterval: 1)
+//	print(await counter.count)
+//}
 
-Thread.sleep(forTimeInterval: 5)
+
+
+// Thread.sleep(forTimeInterval: 5)

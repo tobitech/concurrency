@@ -1,5 +1,198 @@
 import Foundation
 
+// As we’ve seen before, it’s possible for tasks to be resumed after a suspension point on pretty much any thread. It doesn’t have to necessarily be the one you were on before the suspension point.
+// Usually when working with tasks, you shouldn’t even need to think about what thread you’re working on, but what do we do for those times that we really do need to execute on a particular thread, like the main thread?
+
+// Let's suppose we have a SwiftUI view model that has an endpoint that is asynchronous
+// class ViewModel: ObservableObject {
+// to make this Sendable we would have to make all the properties immutable, which is not what we want to do.
+// final class ViewModel: ObservableObject, Sendable {
+	// @Published var count = 0 // ⚠️ Stored property '_count' of 'Sendable'-conforming class 'ViewModel' is mutable
+	
+	// sadly, this code compiles with no warning even though it's very wrong, because SwiftUI doesn't allow you to mutate @Published properties on non main threads.
+	// to do this let's print warning if we're not on the main thread.
+	// func perform() async throws {
+		// try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//		if !Thread.current.isMainThread {
+//			print("🟣 Mutating @Published property on a non-main thread.")
+//		}
+//		self.count = .random(in: 1...1_000)
+		
+		// let's reach out to some old tools to solve this.
+		// we now know this is executing on the main thread. however we're getting a compiler warning.
+		// thats because the view model is not a Sendable type and it's not easy to make it a Sendable type.
+		// Another problem is that this DQ.main.async closure apart from not having all the nicities of Swift, it would not inherit the current Task locals
+//		DispatchQueue.main.async {
+//			if !Thread.current.isMainThread {
+//				print("🟣 Mutating @Published property on a non-main thread.")
+//			}
+//			self.count = .random(in: 1...1_000) // ⚠️ Capture of 'self' with non-sendable type 'ViewModel' in a `@Sendable` closure
+//		}
+//		MyLocals.$id.withValue(42) {
+//			defer { print("withValue scope ended")}
+//			DispatchQueue.main.async {
+//				if !Thread.current.isMainThread {
+//					print("🟣 Mutating @Published property on a non-main thread.")
+//				}
+				// self.count = .random(in: 1...1_000) // ⚠️ Capture of 'self' with non-sendable type 'ViewModel' in a `@Sendable` closure
+				
+				// This crashes because this is an escaping closure, the local is only available during the life time of the withValue closure but because DQ.main.async is escaping it's running later, even after the life time of the withValue closure.
+				// print("On the main thread")
+				// output
+//				withValue scope ended
+//				On the main thread
+				
+			// self.count = MyLocals.id // ⛔️ Thread 1: Swift runtime failure: Unexpectedly found nil while implicitly unwrapping an Optional value
+				
+//			}
+//		}
+//	}
+//}
+
+// All of this is reason enough for us to look for another way of forcing work to be done on the main thread. Just as threads have the concept of a “main thread”, and dispatch queues have the concept of a “main queue”, actors have the concept of a “main actor” and it’s an actor type in the standard library literally called MainActor:
+// The main actor type comes with a special endpoint for running a synchronous closure on the main thread:
+//class ViewModel: ObservableObject {
+//	@Published var count = 0
+//
+//	func perform() async throws {
+//		try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//		await MyLocals.$id.withValue(42) {
+//			defer { print("withValue scope ended")}
+			// Even with all these, we still have a warning
+			// While it is true that MainActor.run is the best way to synchronously run code on the main thread, it still is not appropriate to pass non-sendable data across this boundary.
+			// Even though the closure passed to run will be executed serialised, we don't know if there is another thread somewhere that want to access this property and so we can't gaurantee it is isolated from other concurrent code.
+			// If you invoked MainActor.run multiple times you have a chance for a race condition:
+			// await MainActor.run { // 🛑 'async' call in a function that does not support concurrency
+				// self.count = .random(in: 1...1_000) // ⚠️ Capture of 'self' with non-sendable type 'ViewModel' in a `@Sendable` closure
+			// }
+//			DispatchQueue.main.async {
+//				if !Thread.current.isMainThread {
+//					print("🟣 Mutating @Published property on a non-main thread.")
+//				}
+//				self.count = MyLocals.id
+//			}
+//		}
+//	}
+//}
+
+
+// There is another way to use MainActor that mitigates all these issues, you can actually use it as an attribute to decorate an entire function or method and then every single line in that scope will be executed on the main actor and hence the main thread.
+// Now it’s important to note that just because the perform() function is marked as @MainActor it doesn’t mean everything is performed on the main thread.
+// Any suspension points are still allowed to be executed by other actors, and hence other threads. We can perform completely asynchronous and concurrent work in this function even though the whole thing is marked as @MainActor.
+//class ViewModel: ObservableObject {
+//	@Published var count = 0
+//
+//	@MainActor
+//	func perform() async throws { // async means we can still perform asynchronous work in here even though it's marked as @MainActor.
+		
+		// however if we stil perform intense CPU work on the main thread, it will still block it up like computing nth prime for large number.
+		// this is literally done on the main thread, there is no suspension point here.
+		// nthPrime(2_000_000)
+		
+		// here is an example of a suspension point despite being inside a function marked with @MainActor,
+		// this Task.sleep did not block the MainActor, it still freed up the main thread so that other Tasks could use it
+//		try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//		MyLocals.$id.withValue(42) {
+//			defer { print("withValue scope ended")}
+//			if !Thread.isMainThread {
+//				print("🟣 Mutating @Published property on a non-main thread.")
+//			}
+//			self.count = MyLocals.id
+			// print(self.count)
+			// Ouput
+			// 42
+			// withValue scope ended
+//		}
+//	}
+//}
+
+
+// We can also mark the entire class as being MainActor.
+// This implicitly marks all initializers, methods and computed properties as @MainActor.
+// It even further makes the class Sendable.
+// However, by declaring it as @MainActor we know that all interactions with it will be serialized to the main thread, and that makes it safe to use across concurrent boundaries.
+
+// @MainActor
+// class ViewModel: ObservableObject {
+//class ViewModel: ObservableObject { // }, Sendable {
+//	@Published var count = 0
+//
+//	func perform() async throws {
+		
+		// this compiles with no warnings
+		// without the @MainActor, we get a warning ⚠️ Capture of 'self' with non-sendable type 'ViewModel' in a `@Sendable` closure
+		// Task {
+			// self.count += 1
+			// print(Thread.current) // <_NSMainThread: 0x10110aac0>{number = 1, name = main}
+		// }
+		
+		// If we detach we get a non main thread.
+		// This also applies to other concurrent operations that don't inherit the current actor context i.e.g async let,
+		// if we use those in here, we will see that they execute on non-main threads
+//		Task.detached {
+//			print(Thread.current) // <NSThread: 0x101429f40>{number = 2, name = (null)}
+//		}
+		
+//		try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//		MyLocals.$id.withValue(42) {
+//			defer { print("withValue scope ended")}
+//			if !Thread.isMainThread {
+//				print("🟣 Mutating @Published property on a non-main thread.")
+//			}
+//			self.count = MyLocals.id
+//			print(self.count)
+//		}
+//	}
+//}
+
+// It turns out you can go really, really far without ever thinking about threads. In fact, you can do pretty much everything we’ve discussed on just a single thread.
+// To explore this, let’s fire up a bunch of concurrent work, and force it all to run on the main thread. We’ll start up a group with one task that prints every quarter second:
+
+@MainActor
+class ViewModel: ObservableObject {
+	@Published var count = 0
+
+	func perform() async throws {
+		await withThrowingTaskGroup(of: Void.self, body: { group in
+			group.addTask { @MainActor in
+				while true {
+					try await Task.sleep(nanoseconds: NSEC_PER_SEC / 4)
+					print(Thread.current, "Timer ticked")
+				}
+			}
+			// The Problem while it took a while before we started seeing anything printed is because we put an intense CPU computation on the main actor, so it completely block every other tasks : i.e. the timer tick and file downloads
+			// and as soon it it finished every other task was freed
+			group.addTask { @MainActor in
+				// nthPrime(2_000_000) // this blocks the main thread
+				// this is nthPrime version that yields letting other tasks start immediately.
+				await asyncNthPrime(2_000_000)
+			}
+			for n in 1..<workcount {
+				// force all of these to execute on the MainActor
+				group.addTask { @MainActor in
+					_ = try await URLSession.shared.data(from: .init(string: "http://ipv4.download.thinkbroadband.com/1MB.zip")!)
+					print(Thread.current, "Download finished", n)
+				}
+			}
+		})
+	}
+}
+
+
+@main
+struct Main {
+	// having this means we're working in structured programming since we have an async context in main function.
+	static func main() async throws {
+		let viewModel = ViewModel()
+		try await viewModel.perform()
+		try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+	}
+}
+
+// Thread.sleep(forTimeInterval: 2)
+
+
+
 //@main
 //struct Main {
 //	static func main() async throws {
