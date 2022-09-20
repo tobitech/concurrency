@@ -1,12 +1,12 @@
 import Foundation
 
-@main
-struct Main {
-	static func main() async throws {
-		try await Task.sleep(nanoseconds: NSEC_PER_SEC)
-		print("done!")
-	}
-}
+//@main
+//struct Main {
+//	static func main() async throws {
+//		try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//		print("done!")
+//	}
+//}
 
 // The cool thing about immediately having an asynchronous context available, and that context defining the lifetime of the executable, is that we no longer need to add sleeps to the main thread so that work can be performed. That was hacky and imprecise.
 // If you find yourself creating a new task it is worth thinking about other ways you could have an asynchronous context provided to you from a parent scope.

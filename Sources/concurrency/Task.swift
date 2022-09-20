@@ -907,33 +907,33 @@ func taskStorageAndCooperation() {
 // We will also make the class unsafe to pass across concurrent boundaries by changing how we lock the increment to only affect the count up, removing the defer.
 // // this change is subtle but the compiler can't hold our hands that something bad has happened
 // This is why there is an entirely new kind of data type in Swift 5.5 that allows you to protect a piece of mutable state from these kinds of data races. And this data type is deeply ingrained into the language so that the compiler can know when you are using it in a way that could potentially lead to data races.
-class Counter: @unchecked Sendable {
-	let lock = NSLock()
-	var count: Int = 0
-	var maximum = 0
-	
-	func increment() {
-		self.lock.lock()
-		// defer { self.lock.unlock() }
-		self.count += 1
-		self.lock.unlock()
-		self.maximum = max(self.count, self.maximum)
-	}
-	
-	func decrement() {
-		self.lock.lock()
-		defer { self.lock.unlock() }
-		self.count -= 1
-	}
-}
+//class Counter: @unchecked Sendable {
+//	let lock = NSLock()
+//	var count: Int = 0
+//	var maximum = 0
+//
+//	func increment() {
+//		self.lock.lock()
+//		// defer { self.lock.unlock() }
+//		self.count += 1
+//		self.lock.unlock()
+//		self.maximum = max(self.count, self.maximum)
+//	}
+//
+//	func decrement() {
+//		self.lock.lock()
+//		defer { self.lock.unlock() }
+//		self.count -= 1
+//	}
+//}
 
-func doSomething() {
-	let counter = Counter()
-	
-	Task {
-		counter.increment()
-	}
-}
+//func doSomething() {
+//	let counter = Counter()
+//
+//	Task {
+//		counter.increment()
+//	}
+//}
 
 // actor is an entirely new kind of data type in Swift 5.5 that allows you to protect a piece of mutable state from these kinds of data races. And this data type is deeply ingrained into the language so that the compiler can know when you are using it in a way that could potentially lead to data races.
 // Structs and enums are Swift’s tools for modeling value types that represent holding multiple data types at once or holding a single choice from multiple data types.
