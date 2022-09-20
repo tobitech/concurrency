@@ -1,3 +1,6 @@
+// ⚠️ Add '@preconcurrency' to suppress 'Sendable'-related warnings from module 'Foundation'
+@preconcurrency import Foundation
+
 func taskBasics() throws {
 	// The fundamental unit for creating an asynchronous context is known as Task, and it can be created in a way similar to threads and dispatch work items:
 	// let task: Task<(), Never> // generic over two types.
@@ -975,34 +978,36 @@ let counter = CounterActor()
 // It may seem strange that we have to await invoking the increment method, especially since the method is not even declared as async:
 // As far as the actor is concerned the method is perfectly synchronous. It can make any changes it wants to its mutable state without worrying about other threads because actors fully synchronize its data and methods.
 // But as far as the outside world is concerned, this method cannot be called synchronously because there may be multiple tasks trying to invoke the increment method at once. The actor needs to do the extra work in order to synchronize access. The way the actor can do this efficiently is by operating in an asynchronous context.
-// for _ in 0..<workcount {
-for _ in 0..<workcount { // we could even run it on larger work count.
-	Task {
-		// to show that we're not exploding the number of threads
-		// print("increment", Thread.current)
-		await counter.increment() // should prints 10,000 without the decrement Task below.
+func synchronisation() {
+	// for _ in 0..<workcount {
+	for _ in 0..<workcount { // we could even run it on larger work count.
+		Task {
+			// to show that we're not exploding the number of threads
+			// print("increment", Thread.current)
+			await counter.increment() // should prints 10,000 without the decrement Task below.
+		}
+		// let's see what happens by running the same amount of work to decrement.
+		Task {
+			// print("decrement", Thread.current)
+			await counter.decrement() // should now prints 0 with the introduction of this.
+		}
 	}
-	// let's see what happens by running the same amount of work to decrement.
+	
+	Thread.sleep(forTimeInterval: 1)
+	// even accessing the property outside an asynchronous context is not allowed.
+	// This is because it’s possible to try reading the count while another task is in the middle of updating it, which could lead us to getting an out-of-date value.
+	// print("counter.count", counter.count) // 🛑 Actor-isolated property ‘count’ can not be referenced from a non-isolated context
+	
 	Task {
-		// print("decrement", Thread.current)
-		await counter.decrement() // should now prints 0 with the introduction of this.
+		await print("counter.count", counter.count)
+		// does this means we've introduced a race condition in our code and that the actor isn't protecting us?
+		// the answer is no, there is no race condition, it's just an example of something that is non-deterministic by it very nature.
+		// We have 1,000 increment tasks and 1,000 decrement tasks running concurrently, and the order that they run is not going to be deterministic. Sometimes we may get a long stretch of consecutive increment tasks running, allowing the max to get a little high, and other times it may be more balanced of alternating incrementing and decrementing tasks. There really is no way to know, and that’s why this value can change.
+		// This is yet another example of how difficult multithreaded programming can be. Just because we have extremely powerful tools for preventing data races doesn’t mean we have removed the possibilities of non-determinism creeping into our code.
+		// If we don’t want that kind of non-determinism then we shouldn’t be performing concurrently.
+		// The issue of data races is completely seperate from non-determinism and Swift tools are tuned to address data races not non-determinism.
+		await print("counter.maximum", counter.maximum) // we get 8 // then 6
 	}
-}
-
-Thread.sleep(forTimeInterval: 1)
-// even accessing the property outside an asynchronous context is not allowed.
-// This is because it’s possible to try reading the count while another task is in the middle of updating it, which could lead us to getting an out-of-date value.
-// print("counter.count", counter.count) // 🛑 Actor-isolated property ‘count’ can not be referenced from a non-isolated context
-
-Task {
-	await print("counter.count", counter.count)
-	// does this means we've introduced a race condition in our code and that the actor isn't protecting us?
-	// the answer is no, there is no race condition, it's just an example of something that is non-deterministic by it very nature.
-	// We have 1,000 increment tasks and 1,000 decrement tasks running concurrently, and the order that they run is not going to be deterministic. Sometimes we may get a long stretch of consecutive increment tasks running, allowing the max to get a little high, and other times it may be more balanced of alternating incrementing and decrementing tasks. There really is no way to know, and that’s why this value can change.
-	// This is yet another example of how difficult multithreaded programming can be. Just because we have extremely powerful tools for preventing data races doesn’t mean we have removed the possibilities of non-determinism creeping into our code.
-	// If we don’t want that kind of non-determinism then we shouldn’t be performing concurrently.
-	// The issue of data races is completely seperate from non-determinism and Swift tools are tuned to address data races not non-determinism.
-	await print("counter.maximum", counter.maximum) // we get 8 // then 6
 }
 
 // Thread.sleep(forTimeInterval: 5)
