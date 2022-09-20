@@ -1,9 +1,22 @@
-@preconcurrency import Foundation
+import Foundation
+
+@main
+struct Main {
+	static func main() async throws {
+		try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+		print("done!")
+	}
+}
+
+// The cool thing about immediately having an asynchronous context available, and that context defining the lifetime of the executable, is that we no longer need to add sleeps to the main thread so that work can be performed. That was hacky and imprecise.
+
+
+// @preconcurrency import Foundation
 
 // Let's suppose for a moment that Swift doesn't have for-loops but that it has a `jump` statement.
 // We could replicate what for-loops give us by using jump statements.
 // suppose we wanted to write a loop that printed all the even numbers between 0 and 100
-func unstructuredProgramming() {
+//func unstructuredProgramming() {
 	//var x = 0
 	//outer: var y = 0
 	// this is how to label a statement, this one labelled as top.
@@ -24,14 +37,14 @@ func unstructuredProgramming() {
 	//}
 	
 	// compared with for-loop
-	for x in 0...100 {
-		for y in 0...100 {
-			if x.isMultiple(of: 2) && y.isMultiple(of: 2) {
-				print(x, y)
-			}
-		}
-	}
-}
+//	for x in 0...100 {
+//		for y in 0...100 {
+//			if x.isMultiple(of: 2) && y.isMultiple(of: 2) {
+//				print(x, y)
+//			}
+//		}
+//	}
+//}
 
 // And although Swift does not offer jump statements, at least not in the completely unfettered way that unstructured programming languages do,
 // it does still have some tools that leave the world of fully structured programming.
@@ -70,18 +83,18 @@ func unstructuredProgramming() {
 
 // The same goes for lock.
 // it is not guaranteed that we will be locked inside the thread’s execution:
-func thread() {
-	let lock = NSLock()
-	lock.lock()
-	defer { print("Finished") }
-	print("Before")
-	Thread.detachNewThread {
-		
-		print(Thread.current)
-	}
-	print("After")
-	lock.unlock()
-}
+//func thread() {
+//	let lock = NSLock()
+//	lock.lock()
+//	defer { print("Finished") }
+//	print("Before")
+//	Thread.detachNewThread {
+//
+//		print(Thread.current)
+//	}
+//	print("After")
+//	lock.unlock()
+//}
 
 // thread()
 
@@ -92,10 +105,10 @@ func thread() {
 // This one below:
 // ⚠️ Type 'UUID' does not conform to the 'Sendable' protocol
 // Because the types `UUID` and `Date` haven't been audited for Sendability in our own Swift's version we can add a `@preconcurrency import to Foundation to suppress all those Sendable warnings.
-enum RequestData {
-	@TaskLocal static var requestId: UUID! // ⚠️ Type 'UUID' does not conform to the 'Sendable' protocol
-	@TaskLocal static var startDate: Date! // ⚠️ Type 'UUID' does not conform to the 'Sendable' protocol
-}
+//enum RequestData {
+//	@TaskLocal static var requestId: UUID! // ⚠️ Type 'UUID' does not conform to the 'Sendable' protocol
+//	@TaskLocal static var startDate: Date! // ⚠️ Type 'UUID' does not conform to the 'Sendable' protocol
+//}
 
 //func databaseQuery() async throws {
 //	let requestId = RequestData.requestId!
@@ -336,56 +349,56 @@ enum RequestData {
 
 // let's assume the child operations return an actual value.
 
-struct Response: Encodable {
-	let user: User
-	let subscription: StripeSubscription
-}
-
-struct User: Encodable { var id: Int }
-func fetchUser() async throws -> User {
-	let requestId = RequestData.requestId!
-	defer { print(requestId, "databaseQuery", "isCancelled", Task.isCancelled) }
-	print(requestId, "Making database query")
-	try await Task.sleep(nanoseconds: 500_000_000)
-	print(requestId, "Finished database query")
-	return User(id: 42)
-}
-
-struct StripeSubscription: Encodable { var id: Int }
-func fetchSubscription() async throws -> StripeSubscription {
-	let requestId = RequestData.requestId!
-	defer { print(requestId, "networkRequest", "isCancelled", Task.isCancelled) }
-	print(requestId, "Making network request")
-	try await Task.sleep(nanoseconds: 500_000_000)
-	print(requestId, "Finished network request")
-	return StripeSubscription(id: 1729)
-}
+//struct Response: Encodable {
+//	let user: User
+//	let subscription: StripeSubscription
+//}
+//
+//struct User: Encodable { var id: Int }
+//func fetchUser() async throws -> User {
+//	let requestId = RequestData.requestId!
+//	defer { print(requestId, "databaseQuery", "isCancelled", Task.isCancelled) }
+//	print(requestId, "Making database query")
+//	try await Task.sleep(nanoseconds: 500_000_000)
+//	print(requestId, "Finished database query")
+//	return User(id: 42)
+//}
+//
+//struct StripeSubscription: Encodable { var id: Int }
+//func fetchSubscription() async throws -> StripeSubscription {
+//	let requestId = RequestData.requestId!
+//	defer { print(requestId, "networkRequest", "isCancelled", Task.isCancelled) }
+//	print(requestId, "Making network request")
+//	try await Task.sleep(nanoseconds: 500_000_000)
+//	print(requestId, "Finished network request")
+//	return StripeSubscription(id: 1729)
+//}
 
 //func response(_ request: URLRequest) async throws -> HTTPURLResponse {
-func response(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
-	
-	let requestId = RequestData.requestId!
-	let start = RequestData.startDate!
-	
-	defer { print(requestId, "Request finished in", Date().timeIntervalSince(start)) }
-	
-	Task {
-		print(RequestData.requestId!, "Track analytics")
-	}
-	
-	// use async let to bind some kind of database response to running the databaseQuery
-	// what we're doing here is async let bind.
-	async let user = fetchUser() // databaseQuery()
-	async let subscription = fetchSubscription() // networkRequest()
-	
-	// we cannot just use the async let variable, we have to await it
-	// and even try it if operation that produced it is failable.
-	// try await print(user)
-	// look how linearly this reads
-	let jsonData = try await JSONEncoder().encode(Response(user: user, subscription: subscription))
-	
-	return (jsonData, .init())
-}
+//func response(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+//
+//	let requestId = RequestData.requestId!
+//	let start = RequestData.startDate!
+//
+//	defer { print(requestId, "Request finished in", Date().timeIntervalSince(start)) }
+//
+//	Task {
+//		print(RequestData.requestId!, "Track analytics")
+//	}
+//
+//	// use async let to bind some kind of database response to running the databaseQuery
+//	// what we're doing here is async let bind.
+//	async let user = fetchUser() // databaseQuery()
+//	async let subscription = fetchSubscription() // networkRequest()
+//
+//	// we cannot just use the async let variable, we have to await it
+//	// and even try it if operation that produced it is failable.
+//	// try await print(user)
+//	// look how linearly this reads
+//	let jsonData = try await JSONEncoder().encode(Response(user: user, subscription: subscription))
+//
+//	return (jsonData, .init())
+//}
 
 // Let's go back without cancelling the task.
 //RequestData.$requestId.withValue(UUID()) {
@@ -473,46 +486,46 @@ func response(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
 // With threads, we already know the code is not safe to run
 // we should have encapsulated the variable in a class and have some locking in place and expose method to mutate the variable but that is a lot of work to do.
 // Let's see what that looks like with task groups.
-func taskGroup() {
-	Task {
-		let sum = await withTaskGroup(
-			// the value each child task will return, for this example it's an Int
-			of: Int.self,
-			// once they are all complete, we will sum them together and return a sum from the task group
-			returning: Int.self,
-			// in this closure we will do the work to actually start adding tasks to the group
-			body: { group in
-				// we can add as many task as we want, this allows us do a dynamic number of tasks where as with async let we can only do a fixed number of tasks
-				for n in 1...1000 {
-					// all these child tasks will be run in parallel
-					group.addTask(operation: {
-						// in here we have an asynchronous context to do some asynchronous work and produce an integer
-						// we have to return an integer from here.
-						try? await Task.sleep(nanoseconds: NSEC_PER_SEC)
-						return n
-					})
-				}
-				// we can be notified when they all finish by awaiting
-				// this allows us to suspend until every task in the group finishes
-				// await group.waitForAll()
-				// even better we can iterate over all the output as the child tasks finish, we can be instantly notified when an integer has been produced and we can act upon it like sum it up.
-				// Remember that since the tasks are run in parallel there is no guarantee of the order they will emit, and this can be an important distinction. but in this example we don't care about the order.
-				var sum = 0
-				// the group here conforms to a protocol known as AsyncSequence, which is analogous to the Sequence protocol in Swift, except its next method is allowed to suspend in order to perform asynchronous work.
-				// this is what allows us to do `for await`
-				for await int in group {
-					sum += int
-				}
-				return sum
-			}
-		)
-		
-		// we get - sum 500500 every time we run this.
-		// no difference in value.
-		print("sum", sum)
-		// n*(n+1)/2, 1000*1001/2 = 500,500
-	}
-}
+//func taskGroup() {
+//	Task {
+//		let sum = await withTaskGroup(
+//			// the value each child task will return, for this example it's an Int
+//			of: Int.self,
+//			// once they are all complete, we will sum them together and return a sum from the task group
+//			returning: Int.self,
+//			// in this closure we will do the work to actually start adding tasks to the group
+//			body: { group in
+//				// we can add as many task as we want, this allows us do a dynamic number of tasks where as with async let we can only do a fixed number of tasks
+//				for n in 1...1000 {
+//					// all these child tasks will be run in parallel
+//					group.addTask(operation: {
+//						// in here we have an asynchronous context to do some asynchronous work and produce an integer
+//						// we have to return an integer from here.
+//						try? await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//						return n
+//					})
+//				}
+//				// we can be notified when they all finish by awaiting
+//				// this allows us to suspend until every task in the group finishes
+//				// await group.waitForAll()
+//				// even better we can iterate over all the output as the child tasks finish, we can be instantly notified when an integer has been produced and we can act upon it like sum it up.
+//				// Remember that since the tasks are run in parallel there is no guarantee of the order they will emit, and this can be an important distinction. but in this example we don't care about the order.
+//				var sum = 0
+//				// the group here conforms to a protocol known as AsyncSequence, which is analogous to the Sequence protocol in Swift, except its next method is allowed to suspend in order to perform asynchronous work.
+//				// this is what allows us to do `for await`
+//				for await int in group {
+//					sum += int
+//				}
+//				return sum
+//			}
+//		)
+//
+//		// we get - sum 500500 every time we run this.
+//		// no difference in value.
+//		print("sum", sum)
+//		// n*(n+1)/2, 1000*1001/2 = 500,500
+//	}
+//}
 
 // So this code works without any race conditions and we didn’t even have to introduce an actor in order to isolate access to shared mutable state.
 // Thanks to the way task group was designed we get the ability to accumulate the results of 1,000 tasks in a very simple manner.
@@ -543,30 +556,67 @@ func taskGroup() {
 // However, if you want cancellation to “just work” automatically like we have seen with throwing asynchronous units of work, then we have to switch to a throwing task group:
 // Now we can use try await instead of try? await we were using before to remove the compiler error of not being a a throwing context.
 // It now means if this Task is cancelled, it will trickle all the way down into the child tasks of the group causing the `try await Task.sleep()` to throw, causing the `withThrowingTaskGroup` scope to throw and then everything gets cancelled.
-Task {
-	let sum = try await withThrowingTaskGroup(
-		of: Int.self,
-		returning: Int.self,
-		body: { group in
-			for n in 1...1000 {
-				group.addTask(operation: {
-					try await Task.sleep(nanoseconds: NSEC_PER_SEC)
-					return n
-				})
-			}
-			var sum = 0
-			for try await int in group {
-				sum += int
-			}
-			return sum
-		}
-	)
+//Task {
+//	let sum = try await withThrowingTaskGroup(
+//		of: Int.self,
+//		returning: Int.self,
+//		body: { group in
+//			for n in 1...1000 {
+//				group.addTask(operation: {
+//					try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//					return n
+//				})
+//			}
+//			var sum = 0
+//			for try await int in group {
+//				sum += int
+//			}
+//			return sum
+//		}
+//	)
+//
+//	print("sum", sum)
+//}
 
-	print("sum", sum)
-}
+// What if we don't have an async context available to us?
+// It seems the only choice we have is to spin up a new Task, which we know is unstructured, in such scenario we really don't have an alternative.
+// However, as the language and frameworks mature more and more, there will be fewer situations in which we need to do this.
+
+// As long as we use only the tools of structured programming we can be sure that cancellation of this top level task will trickle down to all the child tasks, including the database query and network request that are run in parallel inside the response function.
+
+//import SwiftUI
+//Text("Hello")
+// this allows running an asynchronous task when the view appears, and the task will be cancelled when the view disappears:
+//	.task {
+		// so we can take all the async work we did above and paste it here.
+//		let sum = try? await withThrowingTaskGroup(
+//			of: Int.self,
+//			returning: Int.self,
+//			body: { group in
+//				for n in 1...1000 {
+//					group.addTask(operation: {
+//						try await Task.sleep(nanoseconds: NSEC_PER_SEC)
+//						return n
+//					})
+//				}
+//				var sum = 0
+//				for try await int in group {
+//					sum += int
+//				}
+//				return sum
+//			}
+//		)
+//
+//		print("sum", sum)
+//	}
 
 
+// As another example, Swift also allows us to implement the entry point of executables in such a way that they are automatically provided with an asynchronous context.
+// as of Xcode 13.4 and Swift 5.6, we can’t perform asynchronous work at the top-level of the main.swift file:
+// we get a compiler error here.
+// This will work in a future version of Swift and Xcode.
+// However before we have that new feature, there was another way of doing this which is to define a main function inside a Main struct marked with @main assuming we rename our main.swift file to something else.
+// try await Task.sleep(nanoseconds: NSEC_PER_SEC) // 🛑 'async' call in a function that does not support concurrency
 
 
-
-Thread.sleep(forTimeInterval: 2)
+// Thread.sleep(forTimeInterval: 2)
